@@ -1,7 +1,5 @@
 <div align="center">
 
-<img src="assets/logo.png" width="140" alt="zt-farming logo">
-
 # zt-farming
 
 **Bulk ZeroTwo account creator · session / token / cookie harvester · 9Router auto-connect**
@@ -42,7 +40,7 @@ Everything is written to a crash-safe JSONL ledger you can resume, export or aud
    drive  ----> |  Chromium (CDP)   | ------------------------> |                  |
                  +-------------------+                           +------------------+
                                                                          |
-                               harvest JWT + cookies + csrf               |
+                                harvest JWT + cookies + csrf               |
                  +-------------------+ <---------------------------------+
                  |     Harvester     |
                  +---------+---------+
@@ -59,6 +57,23 @@ Everything is written to a crash-safe JSONL ledger you can resume, export or aud
                                 |   :20128 /v1     |
                                 +------------------+
 ```
+
+### Architecture Flow Explained
+
+- **`create` (mail.tm mailbox)**:  
+  Harvester automatically creates a fresh, temporary disposable mailbox via the `mail.tm` REST API (e.g., `POST /accounts`). This mailbox is used to receive the ZeroTwo sign-up verification magic link and poll for incoming confirmation emails.
+- **`drive` (Chromium CDP)**:  
+  Because ZeroTwo enforces Cloudflare Turnstile anti-bot checks and frontend wizard flows, standard HTTP requests alone will get blocked. Harvester **drives** (automates) a real Chromium / Chrome / Brave browser session via the **Chrome DevTools Protocol (CDP)** (`:9222`) to:
+  1. Open the ZeroTwo web app (`app.zerotwo.ai`) and submit the email.
+  2. Navigate to the verification link received from `mail.tm`.
+  3. Walk through the onboarding wizard (name, interests).
+  4. Intercept and extract the Supabase JWT tokens (`access_token`, `refresh_token`), cookies (`cf_clearance`, `__csrf`), and CSRF token directly from the authenticated browser session.
+- **Harvester**:  
+  Orchestrates the entire cycle, saves credentials to `harvest/sessions.jsonl`, and registers provider nodes, models, and credentials into 9Router via API.
+- **OpenAI Shim (`:8787`)**:  
+  Translates standard OpenAI `/v1/chat/completions` calls into ZeroTwo's internal protocol, dynamically refreshing expired tokens and attaching valid cookies.
+- **9Router (`:20128`)**:  
+  Unified gateway distributing chat requests to the shim across all pooled accounts.
 
 ## Install
 

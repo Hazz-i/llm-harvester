@@ -1,7 +1,5 @@
 <div align="center">
 
-<img src="../assets/logo.png" width="140" alt="zt-farming logo">
-
 # zt-farming
 
 **Pembuat akun ZeroTwo massal · harvester session / token / cookie · koneksi otomatis 9Router**
@@ -40,7 +38,7 @@
    drive  ----> |  Chromium (CDP)   | ------------------------> |                  |
                  +-------------------+                           +------------------+
                                                                          |
-                               harvest JWT + cookies + csrf               |
+                                harvest JWT + cookies + csrf               |
                  +-------------------+ <---------------------------------+
                  |     Harvester     |
                  +---------+---------+
@@ -57,6 +55,23 @@
                                 |   :20128 /v1     |
                                 +------------------+
 ```
+
+### Penjelasan Alur Arsitektur
+
+- **`create` (mail.tm mailbox)**:  
+  Harvester secara otomatis **membuat** kotak email sementara sekali pakai melalui REST API `mail.tm` (`POST /accounts`). Email ini digunakan saat mendaftar ZeroTwo untuk menerima *magic link* verifikasi pendaftaran dan mengecek inbox secara otomatis.
+- **`drive` (Chromium CDP)**:  
+  Karena antarmuka ZeroTwo dilindungi oleh Cloudflare Turnstile (anti-bot) dan memiliki tahap formulir wizard, permintaan HTTP biasa akan langsung diblokir (403/Turnstile). Harvester **"menyetir" / mengendalikan (drive)** browser Chromium/Chrome/Brave asli lewat protokol **Chrome DevTools Protocol (CDP)** (`:9222`) untuk:
+  1. Membuka web ZeroTwo (`app.zerotwo.ai`) dan mengetikkan email pendaftaran.
+  2. Mengarahkan browser membuka URL verifikasi *magic link* dari inbox email.
+  3. Menyelesaikan formulir onboarding (nama dan minat).
+  4. Menyadap dan mengekstrak token Supabase JWT (`access_token`, `refresh_token`), cookie (`cf_clearance`, `__csrf`), dan token CSRF langsung dari sesi browser aktif.
+- **Harvester**:  
+  Mengorkestrasi seluruh siklus panen, menyimpan akun ke `harvest/sessions.jsonl`, dan mendaftarkan provider node serta kredensial ke 9Router melalui API.
+- **OpenAI Shim (`:8787`)**:  
+  Menerjemahkan request standar OpenAI `/v1/chat/completions` ke protokol internal ZeroTwo, serta memperbarui token JWT secara otomatis jika mendekati waktu kedaluwarsa.
+- **9Router (`:20128`)**:  
+  Pintu gerbang terpadu untuk membagi beban chat completion ke seluruh akun yang tersedia melalui shim.
 
 ## Instalasi
 
