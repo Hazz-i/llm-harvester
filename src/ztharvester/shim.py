@@ -53,14 +53,22 @@ ALLOWED_MODELS = [
 ]
 
 MODEL_ALIASES = {
+    "luna": "gpt-6-luna",
+    "zerotwo/luna": "gpt-6-luna",
+    "zerotwo/gpt-6-luna": "gpt-6-luna",
+    "openai/gpt-6-luna": "gpt-6-luna",
+    "openai/luna": "gpt-6-luna",
     "glm-5-3-flash": "zai-org-glm-5-3-flash",
     "glm-5.3-flash": "zai-org-glm-5-3-flash",
     "zai/glm-5-3-flash": "zai-org-glm-5-3-flash",
     "zai/glm-5.3-flash": "zai-org-glm-5-3-flash",
-    "openai/gpt-6-luna": "gpt-6-luna",
+    "zerotwo/glm-5-3-flash": "zai-org-glm-5-3-flash",
     "deepseek/deepseek-v4.1-flash": "deepseek-v4.1-flash",
+    "zerotwo/deepseek-v4.1-flash": "deepseek-v4.1-flash",
     "minimax/minimax-m3": "minimax-m3",
+    "zerotwo/minimax-m3": "minimax-m3",
     "meta/muse-spark-1.3-contributor": "muse-spark-1.3-contributor",
+    "zerotwo/muse-spark-1.3-contributor": "muse-spark-1.3-contributor",
 }
 
 # A pragmatic provider map; ZeroTwo model ids are prefixed like "openai/gpt-5".
@@ -104,6 +112,10 @@ def _load_model_providers() -> dict[str, str]:
 
 
 def split_model(model: str, known_models: dict[str, str] | None = None) -> tuple[str, str]:
+    if model.startswith("zerotwo/"):
+        model = model.removeprefix("zerotwo/")
+    if "[" in model and model.endswith("]"):
+        model = model[:model.index("[")]
     if model in MODEL_ALIASES:
         model = MODEL_ALIASES[model]
     if known_models and model in known_models:
@@ -197,41 +209,74 @@ class ZeroTwoShim:
         for m in messages:
             if not isinstance(m, dict):
                 continue
+            role = m.get("role", "user")
+            content = m.get("content", "")
+            if isinstance(content, list):
+                text_parts = []
+                for b in content:
+                    if isinstance(b, dict):
+                        if b.get("type") == "text" and isinstance(b.get("text"), str):
+                            text_parts.append(b["text"])
+                        elif "content" in b and isinstance(b["content"], str):
+                            text_parts.append(b["content"])
+                    elif isinstance(b, str):
+                        text_parts.append(b)
+                content = "".join(text_parts)
+            elif not isinstance(content, str):
+                content = str(content) if content is not None else ""
+
+            # Sanitize large agent / hook messages for ZeroTwo's web chat limits
+            if role == "system" and len(content) > 2000:
+                content = content[:2000]
+            elif "SessionStart:startup hook" in content:
+                # Drop this message entirely — consecutive user msgs cause WORK_AGENT_START_FAILED
+                continue
+            elif "</system-reminder>" in content:
+                content = content.split("</system-reminder>")[-1].strip()
+
+            if len(content) > 4000:
+                content = content[:4000]
+
+            if not content.strip():
+                continue
+
             clean.append({
-                "role": m.get("role", "user"),
-                "content": m.get("content", ""),
+                "role": role,
+                "content": content,
                 "id": m.get("id") or str(uuid.uuid4()),
             })
         last_user = next(
             (m["content"] for m in reversed(clean) if m["role"] == "user"), ""
         )
+        if not last_user and clean:
+            last_user = clean[-1]["content"]
+        
+        context_msg = last_user
+        if "</system-reminder>" in context_msg:
+            context_msg = context_msg.split("</system-reminder>")[-1].strip()
+        if len(context_msg) > 1000:
+            context_msg = context_msg[:1000]
+        if not context_msg:
+            context_msg = "Hello"
+
         effort = req.get("reasoning_effort", "medium")
-        return {
+        body: dict[str, Any] = {
             "provider": provider,
             "model": model,
             "messages": clean,
-            "tool_choice": "auto",
-            "reasoning_effort": effort,
             "attachments": [],
             "contextData": {
-                "message": last_user,
+                "message": context_msg,
                 "has_files": False,
                 "file_count": 0,
-                "toolChoice": "auto",
-                "reasoning_effort": effort,
-                "is_hybrid_reasoning": True,
-                "modelProvider": provider,
-                "actualProviderName": provider,
                 "mode": {"type": "thread", "retrieval": None},
                 "unifiedTurnVersion": 1,
-                "research_true": False,
-                "browserExecution": "executor",
-                "approvalPolicy": "never",
-                "sandboxMode": "danger-full-access",
-                "permissionMode": "bypassPermissions",
             },
             "stream": True,
         }
+        if effort:
+            body["reasoning_effort"] = effort
+        return body
 
     async def chat(
         self, req: dict[str, Any], token: str, csrf: str | None = None, cookies: str | None = None, known_models: dict[str, str] | None = None
@@ -327,13 +372,15 @@ class ZeroTwoShim:
         active_csrf = csrf or await self.get_csrf(token)
         retried_csrf = False
         refreshed_token = False
+        out_body = self._body(req, stream=True, known_models=known_models)
+        print(f"[shim DEBUG] messages count={len(out_body.get('messages', []))}, contextData msg len={len(out_body.get('contextData', {}).get('message', ''))}")
 
         while True:
             headers = self._headers(token, csrf=active_csrf, cookies=cookies)
             async with httpx.AsyncClient(timeout=self.timeout) as c:
                 async with c.stream(
                     "POST", ZEROTWO_CHAT, headers=headers,
-                    json=self._body(req, stream=True, known_models=known_models),
+                    json=out_body,
                 ) as r:
                     if r.status_code == 401 and not refreshed_token:
                         new_tok = await self.refresh_token_for_session(token)
@@ -357,6 +404,7 @@ class ZeroTwoShim:
                         err_body = (await r.aread()).decode(errors="replace")
                         raise RuntimeError(f"ZeroTwo API returned {r.status_code}: {err_body}")
 
+                    deltas_seen = False
                     async for line in r.aiter_lines():
                         if not line or not line.startswith("data:"):
                             continue
@@ -367,9 +415,44 @@ class ZeroTwoShim:
                             ev = json.loads(chunk)
                         except json.JSONDecodeError:
                             continue
-                        text = self._extract_text(ev)
-                        if text:
-                            yield {"type": "text", "value": text}
+
+                        if ev.get("status") == "error":
+                            v = ev.get("v") or {}
+                            err_msg = v.get("message") or v.get("displayMessage") or str(v)
+                            try:
+                                with open("/tmp/zt_last_error_req.json", "w") as ef:
+                                    json.dump(out_body, ef)
+                            except Exception:
+                                pass
+                            print(f"[shim DEBUG] ZeroTwo API stream error: {err_msg}, ev={ev}", file=sys.stderr)
+                            raise RuntimeError(f"ZeroTwo API stream error: {err_msg}")
+
+                        entity = ev.get("entity")
+                        status = ev.get("status")
+                        v = ev.get("v")
+
+                        if entity == "message.content" and status == "delta" and isinstance(v, dict):
+                            d = v.get("delta") or {}
+                            txt = d.get("text") or d.get("content") or ""
+                            if txt:
+                                txt = txt.replace("<ent>", "").replace("</ent>", "")
+                                if txt:
+                                    deltas_seen = True
+                                    yield {"type": "text", "value": txt}
+                                continue
+
+                        if entity == "message" and status == "completed" and isinstance(v, dict):
+                            if not deltas_seen:
+                                full_txt = v.get("content") or ""
+                                if full_txt:
+                                    full_txt = full_txt.replace("<ent>", "").replace("</ent>", "")
+                                    yield {"type": "text", "value": full_txt}
+                            continue
+
+                        if not deltas_seen:
+                            text = self._extract_text(ev)
+                            if text:
+                                yield {"type": "text", "value": text}
                     return
 
     @staticmethod
