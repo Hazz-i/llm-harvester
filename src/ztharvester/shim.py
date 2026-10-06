@@ -25,11 +25,13 @@ configured once via ``ZT_ZT_COOKIES`` / ``ZT_ZT_CSRF`` (see ``.env.example``).
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import sys
 import time
 import uuid
+from pathlib import Path
 from typing import Any, AsyncIterator
 
 import httpx
@@ -142,11 +144,19 @@ def _chunk(model: str, delta: dict[str, Any], finish: str | None = None) -> str:
 
 
 class ZeroTwoShim:
-    def __init__(self, *, timeout: float = 300.0, cookies: str = "", csrf: str = "") -> None:
+    def __init__(
+        self,
+        *,
+        timeout: float = 300.0,
+        cookies: str = "",
+        csrf: str = "",
+        pool: SessionPool | None = None,
+    ) -> None:
         self.timeout = timeout
         self.cookies = cookies
         self.csrf = csrf
         self._csrf_cache: dict[str, tuple[str, float]] = {}
+        self.pool = pool or SessionPool()
 
     async def get_csrf(self, token: str) -> str:
         now = time.time()
@@ -316,54 +326,19 @@ class ZeroTwoShim:
         yield "data: [DONE]\n\n"
 
     async def resolve_session(self, token_or_id: str) -> dict[str, Any] | None:
-        """Find the session and proactively refresh its access_token if expired or close to expiry."""
-        from pathlib import Path
-        p = Path("harvest/sessions.jsonl")
-        if not p.exists():
-            return None
-        sessions = _load_all_sessions()
-        sess = _find_session(token_or_id, sessions)
-        if not sess:
-            return None
-
-        current_token = sess.get("access_token", "")
-        claims = _extract_jwt_claims(current_token)
-        exp = claims.get("exp")
-        now = time.time()
-        needs_refresh = False
-        if not exp or now >= exp - 120:
-            needs_refresh = True
-
-        if needs_refresh and sess.get("refresh_token"):
-            new_at, new_rt = await refresh_supabase_token(sess["refresh_token"])
-            if new_at:
-                sess["access_token"] = new_at
-                if new_rt:
-                    sess["refresh_token"] = new_rt
-                p.write_text("\n".join(json.dumps(x) for x in sessions) + "\n")
-                print(f"[shim] Proactively refreshed token for {sess.get('email', 'unknown')}")
-            else:
-                print(f"[shim] Warning: token refresh failed for {sess.get('email', 'unknown')}", file=sys.stderr)
-
-        return sess
+        """Find the session and proactively refresh its access_token if expired, or fallback to healthy session."""
+        return await self.pool.get_healthy_session(token_or_id)
 
     async def refresh_token_for_session(self, token: str) -> str | None:
-        from pathlib import Path
-        p = Path("harvest/sessions.jsonl")
-        if not p.exists():
-            return None
-        sessions = _load_all_sessions()
+        sessions = await self.pool.load()
         target_s = _find_session(token, sessions)
         if not target_s or not target_s.get("refresh_token"):
             return None
-        new_at, new_rt = await refresh_supabase_token(target_s["refresh_token"])
-        if new_at:
-            target_s["access_token"] = new_at
-            if new_rt:
-                target_s["refresh_token"] = new_rt
-            p.write_text("\n".join(json.dumps(x) for x in sessions) + "\n")
+        ok = await self.pool.refresh_session(target_s)
+        if ok:
+            await self.pool.save(sessions)
             print(f"[shim] Token refreshed for {target_s.get('email', 'unknown')}")
-            return new_at
+            return target_s.get("access_token")
         return None
 
     async def _raw_stream(
@@ -389,6 +364,19 @@ class ZeroTwoShim:
                             refreshed_token = True
                             active_csrf = await self.get_csrf(token)
                             continue
+
+                        # Mark current session dead and attempt failover to another healthy session in pool
+                        await self.pool.mark_dead(token, "401 unauthorized")
+                        alt_sess = await self.pool.get_healthy_session()
+                        if alt_sess and alt_sess.get("access_token") != token:
+                            token = alt_sess["access_token"]
+                            if alt_sess.get("cookies"):
+                                cookies = "; ".join(f"{c['name']}={c['value']}" for c in alt_sess["cookies"] if c.get("name"))
+                            active_csrf = alt_sess.get("csrf_token") or await self.get_csrf(token)
+                            print(f"[shim] 401 failover: switched to session {alt_sess.get('email', 'unknown')}")
+                            refreshed_token = True
+                            continue
+
                         err_body = (await r.aread()).decode(errors="replace")
                         raise RuntimeError(f"ZeroTwo API returned {r.status_code}: {err_body}")
 
@@ -581,8 +569,147 @@ def _load_sessions_map() -> dict[str, dict[str, Any]]:
     return result
 
 
-def build_app(shim: ZeroTwoShim | None = None) -> Any:
-    """Return an ASGI app exposing the OpenAI-compatible surface."""
+class SessionPool:
+    """Thread-safe, lock-protected manager for harvested ZeroTwo sessions."""
+
+    def __init__(self, sessions_path: str | Path = "harvest/sessions.jsonl") -> None:
+        self.path = Path(sessions_path)
+        self._lock = asyncio.Lock()
+        self._cached_sessions: list[dict[str, Any]] = []
+
+    async def load(self) -> list[dict[str, Any]]:
+        async with self._lock:
+            if not self.path.exists():
+                return []
+            sessions = []
+            try:
+                for line in self.path.read_text().splitlines():
+                    if line.strip():
+                        sessions.append(json.loads(line))
+            except Exception:
+                pass
+            self._cached_sessions = sessions
+            return list(sessions)
+
+    async def save(self, sessions: list[dict[str, Any]]) -> None:
+        async with self._lock:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            tmp_path = self.path.with_suffix(".tmp")
+            content = "\n".join(json.dumps(s) for s in sessions) + ("\n" if sessions else "")
+            tmp_path.write_text(content)
+            tmp_path.replace(self.path)
+            self._cached_sessions = list(sessions)
+
+    async def refresh_session(self, s: dict[str, Any]) -> bool:
+        rt = s.get("refresh_token")
+        if not rt:
+            s["status"] = "expired"
+            s["last_refresh_error"] = "no_refresh_token"
+            return False
+        new_at, new_rt = await refresh_supabase_token(rt)
+        if new_at:
+            s["access_token"] = new_at
+            if new_rt:
+                s["refresh_token"] = new_rt
+            s["status"] = "active"
+            s["last_refreshed_at"] = time.time()
+            s.pop("last_refresh_error", None)
+            return True
+        else:
+            s["status"] = "expired"
+            s["last_refresh_error"] = "refresh_failed"
+            return False
+
+    async def refresh_all(self, threshold_seconds: float = 1200.0) -> dict[str, int]:
+        sessions = await self.load()
+        if not sessions:
+            return {"total": 0, "refreshed": 0, "active": 0, "failed": 0}
+
+        now = time.time()
+        refreshed_count = 0
+        active_count = 0
+        failed_count = 0
+        changed = False
+
+        for s in sessions:
+            at = s.get("access_token", "")
+            claims = _extract_jwt_claims(at)
+            exp = claims.get("exp")
+            needs_refresh = False
+            if not exp or (exp - now) <= threshold_seconds:
+                needs_refresh = True
+
+            if needs_refresh:
+                ok = await self.refresh_session(s)
+                if ok:
+                    refreshed_count += 1
+                    active_count += 1
+                    changed = True
+                else:
+                    failed_count += 1
+                    changed = True
+            else:
+                s["status"] = "active"
+                active_count += 1
+
+        if changed:
+            await self.save(sessions)
+
+        return {
+            "total": len(sessions),
+            "refreshed": refreshed_count,
+            "active": active_count,
+            "failed": failed_count,
+        }
+
+    async def get_healthy_session(self, preferred_token_or_id: str | None = None) -> dict[str, Any] | None:
+        sessions = await self.load()
+        if not sessions:
+            return None
+
+        now = time.time()
+
+        # 1. Check preferred
+        if preferred_token_or_id:
+            s = _find_session(preferred_token_or_id, sessions)
+            if s and s.get("status") not in ("expired", "dead"):
+                claims = _extract_jwt_claims(s.get("access_token", ""))
+                exp = claims.get("exp")
+                if not exp or exp - now <= 120:
+                    ok = await self.refresh_session(s)
+                    if ok:
+                        await self.save(sessions)
+                        return s
+                else:
+                    return s
+
+        # 2. Preferred is missing, dead, or expired -> Failover to any healthy session
+        for s in sessions:
+            if s.get("status") in ("expired", "dead"):
+                continue
+            claims = _extract_jwt_claims(s.get("access_token", ""))
+            exp = claims.get("exp")
+            if not exp or exp - now <= 120:
+                ok = await self.refresh_session(s)
+                if ok:
+                    await self.save(sessions)
+                    return s
+            else:
+                return s
+
+        return None
+
+    async def mark_dead(self, token_or_id: str, reason: str = "") -> None:
+        sessions = await self.load()
+        target = _find_session(token_or_id, sessions)
+        if target:
+            target["status"] = "dead"
+            target["last_error"] = reason
+            await self.save(sessions)
+
+
+def build_app(shim: ZeroTwoShim | None = None, pool: SessionPool | None = None) -> Any:
+    """Return an ASGI app exposing the OpenAI-compatible surface with auto-refresh."""
     import os
     from pathlib import Path
 
@@ -605,14 +732,62 @@ def build_app(shim: ZeroTwoShim | None = None) -> Any:
                 except Exception:
                     pass
 
+    pool = pool or (shim.pool if shim else SessionPool())
     shim = shim or ZeroTwoShim(
         cookies=default_cookies,
         csrf=default_csrf,
+        pool=pool,
     )
 
+    bg_task: asyncio.Task | None = None
+
+    async def _auto_refresh_worker() -> None:
+        try:
+            stats = await pool.refresh_all(threshold_seconds=1200.0)
+            if stats.get("refreshed", 0) > 0 or stats.get("failed", 0) > 0:
+                print(
+                    f"[shim auto-refresh] startup: {stats['active']} active, "
+                    f"{stats['refreshed']} refreshed, {stats['failed']} failed"
+                )
+        except Exception as exc:
+            print(f"[shim auto-refresh startup error] {exc}", file=sys.stderr)
+
+        while True:
+            try:
+                await asyncio.sleep(600)  # check every 10 minutes
+                stats = await pool.refresh_all(threshold_seconds=1200.0)
+                if stats.get("refreshed", 0) > 0 or stats.get("failed", 0) > 0:
+                    print(
+                        f"[shim auto-refresh] {stats['active']} active, "
+                        f"{stats['refreshed']} refreshed, {stats['failed']} failed"
+                    )
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:
+                print(f"[shim auto-refresh error] {exc}", file=sys.stderr)
+
     async def app(scope: dict[str, Any], receive: Any, send: Any) -> None:
+        nonlocal bg_task
+        if scope["type"] == "lifespan":
+            while True:
+                msg = await receive()
+                if msg["type"] == "lifespan.startup":
+                    if bg_task is None or bg_task.done():
+                        bg_task = asyncio.create_task(_auto_refresh_worker())
+                    await send({"type": "lifespan.startup.complete"})
+                elif msg["type"] == "lifespan.shutdown":
+                    if bg_task and not bg_task.done():
+                        bg_task.cancel()
+                    await send({"type": "lifespan.shutdown.complete"})
+                    return
+            return
+
         if scope["type"] != "http":
             return
+
+        # Fallback in case server did not emit lifespan events
+        if bg_task is None or bg_task.done():
+            bg_task = asyncio.create_task(_auto_refresh_worker())
         path = scope["path"]
         method = scope["method"]
         headers = {k.decode().lower(): v.decode() for k, v in scope["headers"]}

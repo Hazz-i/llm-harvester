@@ -203,6 +203,30 @@ if typer is not None:
         asyncio.run(_do_sync())
 
     @app.command()
+    def refresh(
+        file: Path = typer.Option(Path("harvest/sessions.jsonl"), "--file", "-f", help="Sessions JSONL file"),
+        threshold: float = typer.Option(1200.0, "--threshold", "-t", help="Refresh if expiry within N seconds"),
+        all: bool = typer.Option(False, "--all", "-a", help="Force refresh all accounts regardless of expiry"),
+    ) -> None:
+        """Inspect and refresh Supabase tokens for harvested sessions."""
+        _banner()
+        from .shim import SessionPool
+
+        pool = SessionPool(file)
+        thresh = float("inf") if all else threshold
+        stats = asyncio.run(pool.refresh_all(threshold_seconds=thresh))
+        c = _console()
+        if c and Table:
+            table = Table(title=f"Session Token Refresh ({file})")
+            table.add_column("Metric")
+            table.add_column("Value", justify="right")
+            for k, v in stats.items():
+                table.add_row(k, str(v))
+            c.print(table)
+        else:
+            print(json.dumps(stats, indent=2))
+
+    @app.command()
     def proxies(
         proxy: list[str] = typer.Option(None, "--proxy", help="Proxy host:port:user:pass (repeatable)"),
         proxy_file: str | None = typer.Option(None, "--proxy-file"),
