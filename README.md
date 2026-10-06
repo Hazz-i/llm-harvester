@@ -31,31 +31,42 @@ Everything is written to a crash-safe JSONL ledger you can resume, export or aud
 
 ## Architecture
 
-```
-                 +-------------------+        magic link         +------------------+
-   create -----> |  mail.tm mailbox  | <------------------------ |                  |
-                 +-------------------+                           |                  |
-                                                               |   ZeroTwo web /  |
-                 +-------------------+     CDP automation        |   API endpoints  |
-   drive  ----> |  Chromium (CDP)   | ------------------------> |                  |
-                 +-------------------+                           +------------------+
-                                                                         |
-                                harvest JWT + cookies + csrf               |
-                 +-------------------+ <---------------------------------+
-                 |     Harvester     |
-                 +---------+---------+
-                           |
-              +------------+-------------+
-              |                          |
-      +-------v-------+         +--------v---------+
-      |  sessions.jsonl|         |  OpenAI shim     |
-      +---------------+         |  (port 8787)     |
-                                +--------+---------+
-                                         |
-                                +--------v---------+
-                                |     9Router      |
-                                |   :20128 /v1     |
-                                +------------------+
+```text
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                            zt-farming Architecture                          │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+       [1] Create Mailbox                 [2] Drive Web Automation
+    ┌───────────────────────┐            ┌───────────────────────┐
+    │  mail.tm REST API     │            │  Chromium (CDP :9222) │
+    │  (Disposable Mailbox) │            │  (Turnstile Bypass)   │
+    └──────────┬────────────┘            └───────────┬───────────┘
+               │                                     │
+               │ Receives Magic Link                 │ Automates Sign-up & Wizard
+               ▼                                     ▼
+    ┌────────────────────────────────────────────────────────────┐
+    │             ZeroTwo Platform (app.zerotwo.ai)              │
+    └──────────────────────────────┬─────────────────────────────┘
+                                   │
+                                   │ [3] Harvests JWT, Cookies & CSRF
+                                   ▼
+    ┌────────────────────────────────────────────────────────────┐
+    │                   Harvester Engine (CLI)                   │
+    └──────────────┬───────────────────────────────┬─────────────┘
+                   │                               │
+        Appends to │                    Registers  │ Node & Credentials
+        Ledger     ▼                    via API    ▼
+    ┌───────────────────────┐            ┌───────────────────────┐
+    │ harvest/              │◄───────────│ OpenAI Shim (:8787)   │
+    │ sessions.jsonl        │ Reads live │ (Dynamic Auth & SSE)  │
+    └───────────────────────┘ sessions   └───────────▲───────────┘
+                                                     │
+                                            Proxies  │ Chat Completions
+                                            Requests │ (:20128 /v1)
+                                                     ▼
+                                         ┌───────────────────────┐
+                                         │ 9Router AI Gateway    │
+                                         └───────────────────────┘
 ```
 
 ### Architecture Flow Explained
