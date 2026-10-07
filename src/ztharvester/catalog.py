@@ -21,28 +21,12 @@ ZEROTWO_MODELS: list[dict[str, Any]] = [
     {"id": "muse-spark-1.3-contributor", "name": "Muse Spark 1.3 (c)", "provider": "meta", "type": "llm"},
 ]
 
-# Token Harbor models (native OpenAI-compatible endpoint: https://tokenharbor.ai/v1)
+# Token Harbor free models (native OpenAI-compatible endpoint: https://tokenharbor.ai/v1)
 TOKENHARBOR_MODELS: list[dict[str, Any]] = [
-    {"id": "claude-opus-5.5", "name": "Claude Opus 5.5", "provider": "anthropic", "type": "llm"},
-    {"id": "claude-opus-5.5-fast", "name": "Claude Opus 5.5 Fast", "provider": "anthropic", "type": "llm"},
-    {"id": "claude-sonnet-5.5", "name": "Claude Sonnet 5.5", "provider": "anthropic", "type": "llm"},
-    {"id": "claude-fable-5.1", "name": "Claude Fable 5.1", "provider": "anthropic", "type": "llm"},
-    {"id": "gpt-6-astra", "name": "GPT-6 Astra", "provider": "openai", "type": "llm"},
-    {"id": "gpt-6-astra-fast", "name": "GPT-6 Astra Fast", "provider": "openai", "type": "llm"},
-    {"id": "gpt-5.5", "name": "GPT-5.5", "provider": "openai", "type": "llm"},
-    {"id": "gpt-5.6-terra", "name": "GPT-5.6 Terra", "provider": "openai", "type": "llm"},
-    {"id": "claude-opus-4.8", "name": "Claude Opus 4.8", "provider": "anthropic", "type": "llm"},
-    {"id": "gemini-3.1-pro", "name": "Gemini 3.1 Pro", "provider": "google", "type": "llm"},
-    {"id": "claude-3-5-sonnet-20241022", "name": "Claude 3.5 Sonnet", "provider": "anthropic", "type": "llm"},
-    {"id": "claude-3-5-haiku-20241022", "name": "Claude 3.5 Haiku", "provider": "anthropic", "type": "llm"},
-    {"id": "gpt-4o", "name": "GPT-4o", "provider": "openai", "type": "llm"},
-    {"id": "gpt-4o-mini", "name": "GPT-4o Mini", "provider": "openai", "type": "llm"},
-    {"id": "deepseek-chat", "name": "DeepSeek Chat", "provider": "deepseek", "type": "llm"},
-    {"id": "deepseek-reasoner", "name": "DeepSeek Reasoner", "provider": "deepseek", "type": "llm"},
-    {"id": "deepseek-v3", "name": "DeepSeek V3", "provider": "deepseek", "type": "llm"},
-    {"id": "deepseek-r1", "name": "DeepSeek R1", "provider": "deepseek", "type": "llm"},
-    {"id": "qwen-2.5-72b", "name": "Qwen 2.5 72B", "provider": "alibaba", "type": "llm"},
-    {"id": "llama-3.3-70b", "name": "Llama 3.3 70B", "provider": "meta", "type": "llm"},
+    {"id": "mimo-v2.5:free", "name": "MiMo v2.5 (Free)", "provider": "xiaomi", "type": "llm"},
+    {"id": "deepseek-v4-flash:free", "name": "DeepSeek V4 Flash (Free)", "provider": "deepseek", "type": "llm"},
+    {"id": "deepseek-v4.1-flash:free", "name": "DeepSeek V4.1 Flash (Free)", "provider": "deepseek", "type": "llm"},
+    {"id": "mimo-v2.6-flash:free", "name": "MiMo v2.6 Flash (Free)", "provider": "xiaomi", "type": "llm"},
 ]
 
 # TokenMix models (native OpenAI-compatible endpoint: https://api.tokenmix.ai/v1)
@@ -110,9 +94,14 @@ async def fetch_provider_models(
                 if isinstance(items, list) and items:
                     models = []
                     seen = set()
+                    is_tokenharbor = platform.lower() in ("tokenharbor", "token-harbor", "th")
+                    th_allowed = {m["id"] for m in TOKENHARBOR_MODELS}
+
                     for item in items:
                         if isinstance(item, dict) and "id" in item:
                             mid = item["id"]
+                            if is_tokenharbor and mid not in th_allowed and not mid.endswith(":free"):
+                                continue
                             if mid not in seen:
                                 seen.add(mid)
                                 models.append({
@@ -120,9 +109,12 @@ async def fetch_provider_models(
                                     "name": item.get("name") or mid,
                                     "type": "llm",
                                 })
-                        elif isinstance(item, str) and item not in seen:
-                            seen.add(item)
-                            models.append({"id": item, "name": item, "type": "llm"})
+                        elif isinstance(item, str):
+                            if is_tokenharbor and item not in th_allowed and not item.endswith(":free"):
+                                continue
+                            if item not in seen:
+                                seen.add(item)
+                                models.append({"id": item, "name": item, "type": "llm"})
                     if models:
                         return models
     except Exception:

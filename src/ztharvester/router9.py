@@ -379,3 +379,39 @@ class NineRouterClient:
         except Exception as exc:  # noqa: BLE001
             self.log(f"[router] sync_custom_models error: {exc}")
             return 0
+
+    async def prune_unwanted_models(
+        self, node_id: str, allowed_model_ids: set[str]
+    ) -> int:
+        """Remove any custom models under the given node that are not in allowed_model_ids."""
+        if not node_id:
+            return 0
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as c:
+                r = await c.get(f"{self.base_url}/api/models/custom", headers=self._headers)
+                if r.status_code != 200:
+                    return 0
+                to_remove = [
+                    m.get("id")
+                    for m in r.json().get("models", [])
+                    if m.get("providerAlias") == node_id
+                    and m.get("id") not in allowed_model_ids
+                ]
+                removed = 0
+                for mid in to_remove:
+                    if not mid:
+                        continue
+                    res = await c.delete(
+                        f"{self.base_url}/api/models/custom",
+                        headers=self._headers,
+                        params={"providerAlias": node_id, "id": mid},
+                    )
+                    if res.status_code == 200:
+                        removed += 1
+                if removed > 0:
+                    self.log(f"[router] pruned {removed} unwanted model(s) from node {node_id}")
+                return removed
+        except Exception as exc:  # noqa: BLE001
+            self.log(f"[router] prune_unwanted_models error: {exc}")
+            return 0
+

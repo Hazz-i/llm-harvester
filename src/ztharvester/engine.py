@@ -116,6 +116,7 @@ class Harvester:
                     models = await fetch_provider_models("tokenharbor", res.api_key, cfg.tokenharbor.api_base)
                     record["models"] = [m["id"] for m in models]
                     if node_id:
+                        await router.prune_unwanted_models(node_id, {m["id"] for m in models})
                         await router.sync_custom_models(node_id, models)
                     r_res = await router.connect_session(
                         email=res.email,
@@ -292,7 +293,9 @@ class Harvester:
                         prefix=cfg.tokenharbor.node_prefix,
                     )
                     if node_id:
-                        await router.sync_custom_models(node_id, get_default_models("tokenharbor"))
+                        th_models = get_default_models("tokenharbor")
+                        await router.prune_unwanted_models(node_id, {m["id"] for m in th_models})
+                        await router.sync_custom_models(node_id, th_models)
                 elif cfg.target == "tokenmix":
                     node_id = await router.ensure_node(
                         name=cfg.tokenmix.node_name,
