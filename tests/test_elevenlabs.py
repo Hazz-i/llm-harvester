@@ -32,6 +32,8 @@ class MockCDP:
             return True
         if "sk_" in expression or "xi_" in expression or "api-key" in expression:
             return "xi_live_mockkey_9876543210123456789012"
+        if "ElevenCreative" in expression or "Choose your platform" in expression:
+            return False
         if "document.body" in expression or "innerText" in expression:
             return "Please check your email to verify your account"
         if "input[type=\"email\"]" in expression and "input[type=\"password\"]" in expression:

@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 """:"
-exec python3 "$0" "$@"
+if [ -f "$(dirname "$0")/.venv/bin/python3" ]; then
+    exec "$(dirname "$0")/.venv/bin/python3" "$0" "$@"
+else
+    exec python3 "$0" "$@"
+fi
 """
 import asyncio
 import os

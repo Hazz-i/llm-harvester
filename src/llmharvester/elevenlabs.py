@@ -293,6 +293,151 @@ class ElevenLabsCreator:
         })()""")
         return str(res).strip() if res else ""
 
+    async def _bypass_onboarding(self, max_secs: float = 45.0) -> bool:
+        """Bypass the ElevenLabs onboarding wizard by interacting with all wizard steps (matching Key-Farm)."""
+        url_now = str(await self.cdp.evaluate("window.location.href") or "")
+        is_onboard = (
+            "onboarding" in url_now
+            or await self.cdp.evaluate(r"""(()=>{
+                const text = document.body ? document.body.innerText : '';
+                return text.includes('ElevenCreative') || text.includes('Choose your platform') ||
+                       text.includes('18 years old') || text.includes('By checking this box');
+            })()""")
+        )
+        if not is_onboard:
+            return True
+
+        self.log("[elevenlabs] Bypassing onboarding wizard...")
+        onboard_start = time.monotonic()
+        consecutive_idle = 0
+
+        while time.monotonic() - onboard_start < max_secs:
+            url_curr = str(await self.cdp.evaluate("window.location.href") or "")
+            if "onboarding" not in url_curr and ("developers" in url_curr or "api-keys" in url_curr):
+                self.log(f"[elevenlabs] Onboarding completed! URL: {url_curr}")
+                return True
+
+            body_text = str(await self.cdp.evaluate("document.body ? document.body.innerText : ''") or "")
+
+            # Step 1: Choose your platform (ElevenCreative)
+            if "Choose your platform" in body_text or "ElevenCreative" in body_text:
+                await self.cdp.evaluate(r"""(()=>{
+                    const els = Array.from(document.querySelectorAll('button, div, [role="button"], [role="radio"]'));
+                    const creative = els.find(el => (el.innerText || '').includes('ElevenCreative'));
+                    if (creative) creative.click();
+                })()""")
+                await self._sleep(150)
+
+            # Step 2: Check 18+ age agreement checkbox if present
+            await self.cdp.evaluate(r"""(()=>{
+                const cbs = document.querySelectorAll('button[role="checkbox"], input[type="checkbox"], [role="checkbox"]');
+                cbs.forEach(cb => {
+                    if (cb.getAttribute('aria-checked') === 'false' || cb.checked === false) {
+                        cb.click();
+                    }
+                });
+                const allEls = Array.from(document.querySelectorAll('*'));
+                const label = allEls.find(el => el.innerText && (el.innerText.includes('18 years old') || el.innerText.includes('By checking this box')) && el.children.length === 0);
+                if (label) {
+                    label.click();
+                    if (label.parentElement) label.parentElement.click();
+                }
+            })()""")
+            await self._sleep(150)
+
+            # Step 3: Fill name if an empty text input exists
+            await self.cdp.evaluate(r"""(()=>{
+                const inps = Array.from(document.querySelectorAll('input[type="text"]:not([readonly]), input:not([type]):not([readonly])'));
+                const nameInp = inps.find(i => !i.value);
+                if (nameInp) {
+                    nameInp.value = 'Hunter';
+                    nameInp.dispatchEvent(new Event('input', {bubbles: true}));
+                    nameInp.dispatchEvent(new Event('change', {bubbles: true}));
+                }
+            })()""")
+            await self._sleep(150)
+
+            # Step 4: Click Next / Continue / Skip / Done etc. (Exact & Starts-with matches from Key-Farm)
+            clicked_action = await self.cdp.evaluate(r"""(()=>{
+                const btns = Array.from(document.querySelectorAll('button, a'));
+                const allowed = ['skip', 'continue', 'next', 'done', 'get started', 'finish', "let's go", 'go to home', 'start creating'];
+
+                // 1. Exact match (case-insensitive)
+                for (const kw of allowed) {
+                    const target = btns.find(b => {
+                        const t = b.innerText ? b.innerText.trim().toLowerCase() : '';
+                        return t === kw && !b.disabled && b.offsetParent !== null;
+                    });
+                    if (target) {
+                        target.click();
+                        return target.innerText.trim();
+                    }
+                }
+
+                // 2. Starts with / contains match
+                for (const kw of allowed) {
+                    const target = btns.find(b => {
+                        const t = b.innerText ? b.innerText.trim().toLowerCase() : '';
+                        return (t.startsWith(kw) || t === kw) && !b.disabled && b.offsetParent !== null;
+                    });
+                    if (target) {
+                        target.click();
+                        return target.innerText.trim();
+                    }
+                }
+                return null;
+            })()""")
+
+            if clicked_action:
+                self.log(f"[elevenlabs] Onboarding action clicked: '{clicked_action}'")
+                consecutive_idle = 0
+                await self._sleep(600)
+            else:
+                consecutive_idle += 1
+                if consecutive_idle >= 3:
+                    # Fallback handlers if stuck for 3 cycles (~1.5s)
+                    fallback_act = await self.cdp.evaluate(r"""(()=>{
+                        // Dismiss close button if any
+                        const closeBtn = document.querySelector('button[aria-label*="close" i], button[aria-label*="dismiss" i]');
+                        if (closeBtn && !closeBtn.disabled) {
+                            closeBtn.click();
+                            return 'Close';
+                        }
+                        const opts = Array.from(document.querySelectorAll('[role="radio"], [role="option"], [data-testid*="option"]'));
+                        if (opts.length > 0) {
+                            opts[0].click();
+                            return 'OptionSelect';
+                        }
+                        return null;
+                    })()""")
+                    if fallback_act:
+                        self.log(f"[elevenlabs] Onboarding fallback action clicked: '{fallback_act}'")
+                        consecutive_idle = 0
+                    await self._sleep(600)
+                else:
+                    await self._sleep(500)
+
+                if consecutive_idle >= 6:
+                    self.log("[elevenlabs] No further onboarding actions detected, verifying exit...")
+                    break
+
+        # Verification guard: Wait until URL genuinely leaves onboarding
+        url_now = str(await self.cdp.evaluate("window.location.href") or "")
+        if "onboarding" in url_now:
+            for _ in range(10):
+                await self._sleep(500)
+                url_check = str(await self.cdp.evaluate("window.location.href") or "")
+                if "onboarding" not in url_check:
+                    self.log(f"[elevenlabs] Onboarding completed! URL: {url_check}")
+                    break
+                await self.cdp.evaluate(r"""(()=>{
+                    const btns = Array.from(document.querySelectorAll('button, a'));
+                    const b = btns.find(x => ['skip', 'continue', 'done', 'home'].some(k => (x.innerText || '').toLowerCase().includes(k)) && !x.disabled);
+                    if (b) b.click();
+                })()""")
+
+        return True
+
     async def create_account(self) -> HarvestedKey:
         """Create an ElevenLabs account and harvest an API key."""
         retries = max(1, self.config.max_retries)
@@ -510,85 +655,44 @@ class ElevenLabsCreator:
             })()""")
             await self._sleep(4000)
 
-        # 9. Bypass Onboarding Wizard if present
-        self.log("[elevenlabs] Checking for onboarding wizard...")
-        onboard_start = time.monotonic()
-        max_onboard_secs = 35.0
-        while time.monotonic() - onboard_start < max_onboard_secs:
-            url_curr = str(await self.cdp.evaluate("window.location.href") or "")
-            if "onboarding" not in url_curr and ("app" in url_curr or "dashboard" in url_curr or "developers" in url_curr):
+        # 9. Wait for dashboard/onboarding redirect & bypass wizard (matching Key-Farm)
+        self.log("[elevenlabs] Waiting for dashboard redirect after verification...")
+        logged_in = False
+        for _ in range(25):
+            url_now = str(await self.cdp.evaluate("window.location.href") or "")
+            if "sign-in" not in url_now and "sign-up" not in url_now and "action" not in url_now and (
+                "app" in url_now or "dashboard" in url_now or "onboarding" in url_now
+            ):
+                self.log(f"[elevenlabs] Dashboard/Onboarding reached: {url_now}")
+                logged_in = True
                 break
+            await self._sleep(1000)
 
-            # Click platform choice if present (ElevenCreative)
-            await self.cdp.evaluate("""(()=>{
-                const creative = [...document.querySelectorAll('button, div, [role="button"]')].find(el => {
-                    return (el.innerText || '').includes('ElevenCreative');
-                });
-                if (creative) creative.click();
-            })()""")
+        # Allow onboarding wizard a moment to render
+        for _ in range(8):
+            url_check = str(await self.cdp.evaluate("window.location.href") or "")
+            if "onboarding" in url_check:
+                break
+            await self._sleep(500)
 
-            # Check 18+ agreement checkbox
-            await self.cdp.evaluate("""(()=>{
-                const cbs = document.querySelectorAll('button[role="checkbox"], input[type="checkbox"], [role="checkbox"]');
-                cbs.forEach(cb => {
-                    if (cb.getAttribute('aria-checked') === 'false' || cb.checked === false) {
-                        cb.click();
-                    }
-                });
-                const labels = [...document.querySelectorAll('*')].filter(el => {
-                    const t = (el.innerText || '');
-                    return (t.includes('18 years old') || t.includes('By checking this box')) && el.children.length === 0;
-                });
-                labels.forEach(l => l.click());
-            })()""")
-
-            # Fill name if text input exists
-            await self.cdp.evaluate("""(()=>{
-                const nameInp = document.querySelector('input[type="text"]:not([readonly])');
-                if (nameInp && !nameInp.value) {
-                    nameInp.value = 'Hunter';
-                    nameInp.dispatchEvent(new Event('input', {bubbles: true}));
-                    nameInp.dispatchEvent(new Event('change', {bubbles: true}));
-                }
-            })()""")
-
-            # Click next / continue / skip / done
-            clicked_action = await self.cdp.evaluate("""(()=>{
-                const btns = Array.from(document.querySelectorAll('button, a'));
-                const allowed = ['skip', 'continue', 'next', 'done', 'get started', 'finish', "let's go", 'go to home', 'start creating'];
-                for (const kw of allowed) {
-                    const target = btns.find(b => {
-                        const t = (b.innerText || '').trim().toLowerCase();
-                        return (t === kw || t.startsWith(kw)) && !b.disabled && b.offsetParent !== null;
-                    });
-                    if (target) {
-                        target.click();
-                        return target.innerText.trim();
-                    }
-                }
-                return null;
-            })()""")
-
-            if clicked_action:
-                self.log(f"[elevenlabs] Onboarding action clicked: '{clicked_action}'")
-                await self._sleep(1500)
-            else:
-                await self._sleep(1000)
+        await self._bypass_onboarding(max_secs=45.0)
 
         # 10. Navigate to API Keys page
         self.log(f"[elevenlabs] Navigating to API Keys page: {self.API_KEYS_URL}")
+        api_keys_loaded = False
         for nav_attempt in range(1, 6):
             await self.cdp.navigate(self.API_KEYS_URL, wait_ms=8000)
             await self._sleep(2500)
             url_check = str(await self.cdp.evaluate("window.location.href") or "")
             if "api-keys" in url_check or "developers" in url_check:
+                self.log(f"[elevenlabs] API Keys page opened: {url_check}")
+                api_keys_loaded = True
                 break
             if "onboarding" in url_check:
-                self.log(f"[elevenlabs] Redirected back to onboarding (attempt {nav_attempt}), skipping...")
-                await self.cdp.evaluate("""(()=>{
-                    const b = [...document.querySelectorAll('button, a')].find(x => /skip|continue|next|done/i.test((x.innerText||'').trim()) && !x.disabled);
-                    if (b) b.click();
-                })()""")
+                self.log(f"[elevenlabs] Redirected back to onboarding (attempt {nav_attempt}/5), completing remaining wizard steps...")
+                await self._bypass_onboarding(max_secs=25.0)
+                await self._sleep(1500)
+            else:
                 await self._sleep(1500)
 
         # Close promotional popups if any
