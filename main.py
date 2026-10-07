@@ -48,6 +48,17 @@ def _check_cdp_status() -> tuple[str, str]:
     return "[cyan]Auto-Launch[/cyan]", "[dim]Starts on run[/dim]"
 
 
+def _check_warp_status() -> tuple[str, str]:
+    from llmharvester.warp import is_warp_running, load_warp_profile
+    stat = is_warp_running(timeout=1.0)
+    if stat:
+        return "[bold green]Online (:10808)[/bold green]", f"[green]{stat.get('query', 'Active')} (Cloudflare)[/green]"
+    prof = load_warp_profile()
+    if prof:
+        return "[yellow]Standby (:10808)[/yellow]", "[yellow]Config Ready[/yellow]"
+    return "[dim]Standby[/dim]", "[dim]Auto-Registerable[/dim]"
+
+
 def _get_proxy_count() -> int:
     p = Path("proxies.txt")
     if not p.exists():
@@ -83,6 +94,7 @@ def render_dashboard() -> None:
     console.print()
 
     cdp_status, cdp_badge = _check_cdp_status()
+    warp_status, warp_badge = _check_warp_status()
     proxy_count = _get_proxy_count()
     harvest_counts = _get_harvest_summary()
     router_url = os.getenv("NINEROUTER_URL", "http://localhost:20128")
@@ -93,6 +105,7 @@ def render_dashboard() -> None:
     table.add_column("Details", style="dim")
 
     table.add_row("Browser CDP", cdp_status, cdp_badge)
+    table.add_row("Cloudflare WARP", warp_status, warp_badge)
     table.add_row("Proxy Pool", f"[bold green]{proxy_count} IP(s)[/bold green]" if proxy_count > 0 else "[red]0 IP[/red]", "proxies.txt")
     table.add_row("9Router Gateway", f"[cyan]{router_url}[/cyan]", "Auto-Connect Provider")
     table.add_row(
@@ -132,9 +145,8 @@ def menu_run_harvester() -> None:
     # Token Harbor & ZeroTwo: Cloudflare/Supabase bot-detection breaks in headless mode
     if choice in ("1", "3"):
         platform_name = "Token Harbor" if choice == "1" else "ZeroTwo"
-        extra = " Proxy routing also disabled — direct connection required." if choice == "1" else ""
         console.print(
-            f"[yellow dim]ℹ  {platform_name} requires Visible Window (Cloudflare bot-detection).{extra}[/yellow dim]"
+            f"[yellow dim]ℹ  {platform_name} requires Visible Window (Cloudflare bot-detection).[/yellow dim]"
         )
         is_headless = False
     else:
@@ -144,6 +156,13 @@ def menu_run_harvester() -> None:
         head_choice = Prompt.ask("Choice", choices=["1", "2"], default="1")
         is_headless = (head_choice == "2")
 
+    console.print("\nProxy Routing Mode:")
+    console.print("  [bold green][1][/bold green] Direct Connection (Local IP / No proxy)")
+    console.print("  [bold cyan][2][/bold cyan] Cloudflare WARP (WireGuard :10808 - Auto-starts sing-box, clean Cloudflare IP)")
+    console.print("  [bold yellow][3][/bold yellow] Proxy Pool (proxies.txt / Webshare residential)")
+    default_proxy_choice = "1" if choice == "1" else "2"
+    proxy_mode = Prompt.ask("Choice", choices=["1", "2", "3"], default=default_proxy_choice)
+
     target_map = {
         "1": "tokenharbor",
         "2": "tokenmix",
@@ -151,15 +170,17 @@ def menu_run_harvester() -> None:
     }
     t = target_map.get(choice, "tokenharbor")
 
+    proxy_label = "Direct" if proxy_mode == "1" else ("Cloudflare WARP" if proxy_mode == "2" else "Proxy Pool")
     console.print(f"\n[bold green]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold green]")
-    console.print(f"[bold cyan]Starting Harvest: {t.upper()} ({count} account{'s' if count > 1 else ''}, {'Headless' if is_headless else 'Visible Window'})...[/bold cyan]")
+    console.print(f"[bold cyan]Starting Harvest: {t.upper()} ({count} account{'s' if count > 1 else ''}, {'Headless' if is_headless else 'Visible Window'}, {proxy_label})...[/bold cyan]")
     console.print(f"[bold green]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold green]\n")
 
     cmd = [sys.executable, "-m", "llmharvester.cli", "run", "--target", t, "--count", str(count)]
     if is_headless:
         cmd.append("--headless")
-    # Token Harbor blocks ALL proxy/VPN exits — use direct connection only
-    if t != "tokenharbor" and Path("proxies.txt").exists():
+    if proxy_mode == "2":
+        cmd.append("--warp")
+    elif proxy_mode == "3" and Path("proxies.txt").exists():
         cmd.extend(["--proxy-file", "proxies.txt"])
 
     subprocess.run(cmd)
@@ -262,6 +283,36 @@ def menu_doctor() -> None:
         except Exception:
             dirs_status.append(f"{d_name} (error)")
     table.add_row("Directory Storage", "[bold green]PASS[/bold green]", ", ".join(dirs_status))
+
+    # 9. Cloudflare WARP & sing-box
+    from llmharvester.warp import find_singbox, is_warp_running, load_warp_profile
+    sbox = find_singbox()
+    warp_stat = is_warp_running()
+    warp_prof = load_warp_profile()
+    if warp_stat:
+        table.add_row(
+            "Cloudflare WARP",
+            "[bold green]ACTIVE[/bold green]",
+            f"Port 10808 (IP: {warp_stat.get('query')}, {warp_stat.get('org', 'Cloudflare')})",
+        )
+    elif sbox and warp_prof:
+        table.add_row(
+            "Cloudflare WARP",
+            "[bold green]PASS[/bold green]",
+            "sing-box ready, profile configured (Standby :10808)",
+        )
+    elif sbox:
+        table.add_row(
+            "Cloudflare WARP",
+            "[bold yellow]STANDBY[/bold yellow]",
+            "sing-box ready, profile will auto-generate on harvest",
+        )
+    else:
+        table.add_row(
+            "Cloudflare WARP",
+            "[bold red]MISSING[/bold red]",
+            "sing-box binary not found",
+        )
 
     console.print(table)
     console.print("\n[bold green]Doctor Verdict:[/bold green] Core components tested and ready for automated operations.\n")
@@ -420,6 +471,90 @@ def menu_refresh_tokens() -> None:
     subprocess.run(cmd)
 
 
+def menu_warp() -> None:
+    console.print("\n[bold cyan]=== CLOUDFLARE WARP PROXY MANAGER ===[/bold cyan]")
+    console.print("[dim]Direct WireGuard connection to Cloudflare edge network via sing-box daemon.[/dim]\n")
+
+    from llmharvester.warp import (
+        ensure_warp_proxy,
+        is_warp_running,
+        stop_warp_proxy,
+        register_warp_account,
+        save_warp_profile,
+        load_warp_profile,
+        find_singbox,
+    )
+
+    stat = is_warp_running()
+    sbox = find_singbox()
+    prof = load_warp_profile()
+
+    table = Table(title="Current WARP Status")
+    table.add_column("Property", style="bold cyan")
+    table.add_column("Value")
+    table.add_row("Proxy Endpoint", "http://127.0.0.1:10808")
+    table.add_row(
+        "Daemon Status",
+        "[bold green]Online / Active[/bold green]" if stat else "[yellow]Offline / Standby[/yellow]",
+    )
+    table.add_row(
+        "sing-box Binary",
+        f"[green]{sbox}[/green]" if sbox else "[red]Not Found[/red]",
+    )
+    table.add_row(
+        "Profile Config",
+        "[green]Ready (output/warp/)[/green]" if prof else "[dim]Not Generated[/dim]",
+    )
+    if stat:
+        table.add_row("Exit IP", str(stat.get("query", "Unknown")))
+        table.add_row("Country", str(stat.get("country", "Unknown")))
+        table.add_row("ISP / Org", f"{stat.get('isp', '')} ({stat.get('org', '')})")
+        table.add_row("Hosting / Datacenter", str(stat.get("hosting", False)))
+    console.print(table)
+
+    console.print("\nActions:")
+    console.print("  [bold green][1][/bold green] Start WARP Proxy Daemon (:10808)")
+    console.print("  [bold red][2][/bold red] Stop WARP Proxy Daemon")
+    console.print("  [bold cyan][3][/bold cyan] Register Fresh Account / Generate New Profile")
+    console.print("  [bold yellow][4][/bold yellow] Test Connectivity & IP Leak")
+    console.print("  [bold white][0][/bold white] Back to main menu\n")
+
+    act = Prompt.ask("Choice", choices=["1", "2", "3", "4", "0"], default="1")
+    if act == "0":
+        return
+    if act == "1":
+        console.print("[cyan]Starting Cloudflare WARP proxy on http://127.0.0.1:10808...[/cyan]")
+        try:
+            url, s = ensure_warp_proxy()
+            console.print(
+                f"[bold green][✓] WARP proxy running on {url} (Exit IP: {s.get('query')}, {s.get('org')})[/bold green]"
+            )
+        except Exception as e:
+            console.print(f"[bold red]Failed to start WARP:[/bold red] {e}")
+    elif act == "2":
+        stop_warp_proxy()
+        console.print("[bold green][✓] WARP proxy daemon stopped.[/bold green]")
+    elif act == "3":
+        if Confirm.ask("Generate a fresh Cloudflare WARP WireGuard profile now?", default=True):
+            console.print("[cyan]Registering with Cloudflare REST API...[/cyan]")
+            new_prof = register_warp_account()
+            if new_prof:
+                wg_file, sb_file = save_warp_profile(new_prof)
+                console.print(
+                    f"[bold green][✓] Successfully registered! Saved to {wg_file} and {sb_file}[/bold green]"
+                )
+            else:
+                console.print("[bold red]Failed to register WARP account.[/bold red]")
+    elif act == "4":
+        s = is_warp_running()
+        if s:
+            console.print(f"[bold green][✓] Active Exit IP:[/bold green] {s.get('query')} ({s.get('country')})")
+            console.print(f"[bold green][✓] Organization:[/bold green] {s.get('org')}")
+            console.print(f"[bold green][✓] Hosting flag:[/bold green] {s.get('hosting')}")
+        else:
+            console.print("[yellow]WARP daemon is not currently running. Select option 1 to start it.[/yellow]")
+
+
 def main() -> None:
     while True:
         os.system("clear" if os.name == "posix" else "cls")
@@ -433,9 +568,10 @@ def main() -> None:
         console.print("  [bold magenta][5][/bold magenta] Sync Accounts & Models to 9Router Gateway")
         console.print("  [bold white][6][/bold white] Harvest Summary / Ledger")
         console.print("  [bold white][7][/bold white] Refresh ZeroTwo Tokens")
+        console.print("  [bold cyan][8][/bold cyan] Cloudflare WARP Proxy Manager (WireGuard :10808)")
         console.print("  [bold red][0][/bold red] Exit\n")
 
-        pilihan = Prompt.ask("Select option", choices=["1", "2", "3", "4", "5", "6", "7", "0"], default="1")
+        pilihan = Prompt.ask("Select option", choices=["1", "2", "3", "4", "5", "6", "7", "8", "0"], default="1")
 
         if pilihan == "1":
             menu_run_harvester()
@@ -451,6 +587,8 @@ def main() -> None:
             menu_ledger_summary()
         elif pilihan == "7":
             menu_refresh_tokens()
+        elif pilihan == "8":
+            menu_warp()
         elif pilihan == "0":
             console.print("\n[dim]Goodbye![/dim]\n")
             break

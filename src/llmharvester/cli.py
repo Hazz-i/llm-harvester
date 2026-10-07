@@ -116,6 +116,7 @@ if typer is not None:
         shim_url: str | None = typer.Option(None, "--shim-base-url", help="OpenAI-compatible shim base URL"),
         no_router: bool = typer.Option(False, "--no-router", help="Skip 9Router registration"),
         headless: bool = typer.Option(False, "--headless", "-h", help="Run browser in background/headless mode"),
+        warp: bool = typer.Option(False, "--warp", help="Route traffic via local Cloudflare WARP proxy (127.0.0.1:10808)"),
         proxy: list[str] = typer.Option(None, "--proxy", help="Proxy host:port:user:pass (repeatable)"),
         proxy_file: str | None = typer.Option(None, "--proxy-file", help="File with one proxy per line"),
         concurrency: int | None = typer.Option(None, "--concurrency", help="Parallel sign-ups"),
@@ -134,10 +135,16 @@ if typer is not None:
         _log(f"[target] Active farming target: {selected_target}")
         if headless:
             cfg.browser.headless = True
-        if proxy:
+        if warp:
+            from .warp import ensure_warp_proxy
+            warp_url, warp_status = ensure_warp_proxy()
+            _log(f"[warp] Cloudflare WARP active on {warp_url} ({warp_status.get('query', 'exit IP')} - {warp_status.get('org', 'Cloudflare WARP')})")
+            cfg.proxy.enabled = True
+            cfg.proxy.inline = [warp_url]
+        elif proxy:
             cfg.proxy.enabled = True
             cfg.proxy.inline = list(proxy)
-        if proxy_file:
+        elif proxy_file:
             cfg.proxy.enabled = True
             cfg.proxy.file = proxy_file
         if cdp_ws:
@@ -440,6 +447,75 @@ if typer is not None:
             print(f"wrote {output.rsplit('.', 1)[0]}.csv")
         else:
             print(json.dumps(records, indent=2))
+
+    @app.command()
+    def warp(
+        action: str = typer.Argument("status", help="status | start | stop | register"),
+        port: int = typer.Option(10808, "--port", "-p", help="Local proxy port (default: 10808)"),
+    ) -> None:
+        """Manage Cloudflare WARP WireGuard & sing-box local proxy daemon."""
+        from .warp import (
+            ensure_warp_proxy,
+            is_warp_running,
+            stop_warp_proxy,
+            register_warp_account,
+            save_warp_profile,
+            load_warp_profile,
+            find_singbox,
+        )
+
+        c = _console()
+        act = action.lower().strip()
+        if act == "status":
+            stat = is_warp_running(port)
+            singbox_bin = find_singbox()
+            prof = load_warp_profile()
+            if c and Table:
+                table = Table(title=f"Cloudflare WARP Status (Port {port})")
+                table.add_column("Property", style="bold cyan")
+                table.add_column("Value")
+                table.add_row("Proxy Endpoint", f"http://127.0.0.1:{port}")
+                table.add_row(
+                    "Daemon Status",
+                    "[bold green]Online / Active[/bold green]"
+                    if stat
+                    else "[yellow]Offline / Standby[/yellow]",
+                )
+                table.add_row(
+                    "sing-box Binary",
+                    f"[green]{singbox_bin}[/green]" if singbox_bin else "[red]Not Found[/red]",
+                )
+                table.add_row(
+                    "Profile Config",
+                    "[green]Ready (output/warp/)[/green]"
+                    if prof
+                    else "[dim]Not Generated[/dim]",
+                )
+                if stat:
+                    table.add_row("Exit IP", str(stat.get("query", "Unknown")))
+                    table.add_row("Country", str(stat.get("country", "Unknown")))
+                    table.add_row("ISP / Org", f"{stat.get('isp', '')} ({stat.get('org', '')})")
+                    table.add_row("Hosting / Datacenter", str(stat.get("hosting", False)))
+                c.print(table)
+            else:
+                print(f"WARP port={port} running={bool(stat)} info={stat}")
+        elif act in ("start", "run"):
+            print(f"Starting Cloudflare WARP on port {port}...")
+            url, stat = ensure_warp_proxy(port=port)
+            print(f"[✓] Cloudflare WARP running on {url} (IP: {stat.get('query')}, Org: {stat.get('org')})")
+        elif act == "stop":
+            stop_warp_proxy(port=port)
+            print(f"[✓] Stopped Cloudflare WARP on port {port}")
+        elif act == "register":
+            print("Registering fresh Cloudflare WARP account via Cloudflare REST API...")
+            prof = register_warp_account()
+            if prof:
+                wg_file, sb_file = save_warp_profile(prof, local_port=port)
+                print(f"[✓] Registered successfully! Saved WireGuard: {wg_file}, Sing-box: {sb_file}")
+            else:
+                print("[-] Registration failed")
+        else:
+            print(f"Unknown action: {action}. Available: status | start | stop | register")
 
     def _entry() -> None:
         app()

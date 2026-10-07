@@ -16,3 +16,4 @@ harvest/
 .codegraph/
 chrome-data/
 config.toml
+output/warp/

@@ -21,14 +21,18 @@
 
 ## What it does
 
-1. **Multi-Target Farming**: Supports **ZeroTwo** (`app.zerotwo.ai`), **Token Harbor** (`tokenharbor.ai`), and **TokenMix** (`tokenmix.ai`) with interactive CLI selection or direct flag.
-2. **Automated Provisioning**: Automatically registers accounts using disposable mailboxes from `mail.tm`.
-3. **Turnstile & Verification**: Automatically handles Cloudflare Turnstile anti-bot challenges and clicks verification email links or enters OTP codes.
-4. **Credential Harvesting & 9Router Auto-Connect**:
-   - **ZeroTwo**: Extracts Supabase JWTs (`access_token`, `refresh_token`), cookies (`cf_clearance`, `__csrf`), CSRF tokens, and registers into **9Router** via a local OpenAI shim.
+1. **Multi-Target Farming**: Supports **ZeroTwo** (`app.zerotwo.ai`), **Token Harbor** (`tokenharbor.ai`), **TokenMix** (`api.tokenmix.ai`), and **Grok xAI** (`accounts.x.ai`) with interactive terminal selection or direct CLI flags.
+2. **Interactive TUI Dashboard (`./main.py`)**: Full-featured terminal interface with real-time readiness diagnostics, system status tables, and one-click harvesting.
+3. **Cloudflare WARP Manager**: Built-in WireGuard account generator via official Cloudflare REST API and local `sing-box` daemon (`:10808`) for clean Cloudflare edge IPs (`hosting: false`).
+4. **Webshare Residential Hunter**: Automated residential proxy extractor powered by AI audio captcha solving (Google SpeechRecognition / CapSolver fallback).
+5. **Turnstile & Bot Detection Bypass**: Handles Cloudflare Turnstile verification, auto-detects headless compatibility (forcing Visible Window when needed), and rotates IPs.
+6. **Credential Harvesting & 9Router Auto-Connect**:
    - **Token Harbor**: Generates `thk_live_...` API keys, extracts/syncs model IDs, and auto-registers into **9Router** as a native OpenAI-compatible provider node.
    - **TokenMix**: Generates `sk-tm-...` API keys, extracts/syncs model IDs, and auto-registers into **9Router** as a native OpenAI-compatible provider node.
-5. **Ledger Output**: Writes crash-safe, append-only JSONL files (`sessions.jsonl`, `tokenharbor_keys.jsonl`, `tokenmix_keys.jsonl`).
+   - **ZeroTwo**: Extracts Supabase JWTs (`access_token`, `refresh_token`), cookies (`cf_clearance`, `__csrf`), CSRF tokens, and registers into **9Router** via a local OpenAI shim.
+   - **Grok xAI**: Automates residential proxy account creation with Gmail subaddress aliases and auto-OTP.
+7. **Proxy Pool Auto-Discovery**: Automatically discovers and loads proxies from `proxies.txt`, `output/webshare_residential.txt`, or `output/live_elite.txt`.
+8. **Crash-Safe Ledger Output**: Writes append-only JSONL ledgers (`sessions.jsonl`, `tokenharbor_keys.jsonl`, `tokenmix_keys.jsonl`, `grok_accounts.txt`).
 
 ## Architecture
 
@@ -347,55 +351,61 @@ pm2 logs zt-shim
 
 ## CLI Reference
 
-*(Note: `zt-harvester` is also retained as an alias for backwards compatibility)*.
+*(Note: `llm-harvester`, `llm-harvest`, and `zt-harvester` are available CLI entry points)*.
 
 | Command | Purpose |
 | --- | --- |
-| `llm-harvester run` | Interactive prompt to select target (ZeroTwo, Token Harbor, or TokenMix) |
+| `./main.py` | Launch interactive TUI Dashboard (Readiness diagnostic, 1-click harvester, WARP & proxies) |
+| `llm-harvester run` | Interactive prompt to select target (ZeroTwo, Token Harbor, TokenMix, Grok xAI) |
 | `llm-harvester run -t tokenharbor -n 5` | Harvest 5 Token Harbor accounts & push keys + models to 9Router |
+| `llm-harvester run -t tokenharbor --warp` | Harvest Token Harbor routing traffic through Cloudflare WARP (:10808) |
 | `llm-harvester run -t tokenmix -n 3` | Harvest 3 TokenMix accounts & push keys + models to 9Router |
 | `llm-harvester run -t zerotwo -n 2` | Harvest 2 ZeroTwo accounts & connect to 9Router via shim |
 | `llm-harvester run -t zerotwo -n 5 -s user@vps:...` | Harvest ZeroTwo accounts and auto-upload ledger via SCP to remote VPS |
+| `llm-harvester warp status` | Check status of local Cloudflare WARP proxy daemon (:10808) |
+| `llm-harvester warp start` | Start sing-box WARP daemon on port 10808 (auto-registers if needed) |
+| `llm-harvester warp stop` | Stop sing-box WARP daemon |
+| `llm-harvester warp register` | Register a fresh Cloudflare WARP WireGuard profile via official REST API |
 | `llm-harvester shim -p 8787` | Run the OpenAI-compatible ZeroTwo shim |
 | `llm-harvester sync --target all` | Synchronize all harvested accounts & API keys into 9Router |
-| `llm-harvester proxies --check` | List and test the proxy pool |
+| `llm-harvester proxies --check` | List, auto-discover, and test the proxy pool |
 | `llm-harvester export -f csv` | Export the harvest ledger |
 
-## Proxy pool
+## Cloudflare WARP & Proxy Pool
 
-Spread the per-IP rate limits by rotating the exit IP per account. The pool
-accepts the common `host:port:user:pass` format.
+### 1. Cloudflare WARP (Recommended)
+Cloudflare WARP provides a clean, legitimate edge IP (`hosting: false`) directly through Cloudflare's global network, preventing bot flags without needing third-party proxy subscriptions:
 
 ```bash
-# inline
-llm-harvester run -n 10 --proxy "31.59.20.176:6754:user:pass" --proxy "45.38.107.97:6014:user:pass"
+# Check status
+llm-harvester warp status
 
-# from a file
-llm-harvester run -n 10 --proxy-file proxies.txt
+# Start daemon
+llm-harvester warp start
 
-# verify reachability + exit IPs
-llm-harvester proxies --proxy-file proxies.txt --check
+# Run harvest with WARP
+llm-harvester run -t tokenharbor -n 1 --warp
 ```
 
-Proxies are applied to:
+### 2. Residential & Datacenter Proxy Pool
+Spread per-IP rate limits by rotating exit IPs per account. The pool accepts `host:port:user:pass` or `http://user:pass@host:port` format:
 
-- the harvester's own HTTP calls (mail.tm, 9Router) — via `httpx`;
-- a locally launched Chromium — via `--proxy-server=<url>`.
+```bash
+# Inline proxies
+llm-harvester run -n 10 --proxy "31.59.20.176:6754:user:pass"
 
-> Cloud browsers created by the Browser Use API only accept a
-> `proxy_country_code`, not a custom proxy URL, so a pool is used with a local
-> Chromium launch (mode `cdp` without `--cdp-ws`/`--cdp-url`). Some reseller
-> pools restrict access to a whitelisted source IP — verify with
-> `llm-harvester proxies --check` before a long run.
+# From a file (Auto-discovers proxies.txt, output/webshare_residential.txt, output/live_elite.txt)
+llm-harvester run -n 10 --proxy-file proxies.txt
 
-Set `LLM_PROXIES` (newline/comma separated) or `LLM_PROXY_FILE` to configure the
-pool through the environment.
+# Verify reachability + exit IPs
+llm-harvester proxies --check
+```
 
 ## Python API
 
 ```python
 import asyncio
-from ztharvester import Harvester, HarvesterConfig
+from llmharvester import Harvester, HarvesterConfig
 
 cfg = HarvesterConfig.from_env()
 cfg.browser.cdp_ws = "ws://127.0.0.1:9222/devtools/browser/<id>"
@@ -425,19 +435,27 @@ pytest -q
 ## Project layout
 
 ```
-src/ztharvester/
-  mail.py      mail.tm-compatible disposable mailbox client
-  zerotwo.py   sign-up / magic-link / onboarding driver + harvester
-  cdp.py       CDP adapters (local websocket, in-process bridge, cloud)
-  router9.py   9Router provider-management API client
-  shim.py      OpenAI-compatible <-> ZeroTwo protocol bridge
-  engine.py    concurrent orchestration + resumable JSONL ledger
-  config.py    configuration models
-  cli.py       command line interface
-tests/
-docs/          6 translated READMEs
-assets/        logo
-```
+src/llmharvester/
+  warp.py              Cloudflare WARP WireGuard & sing-box daemon manager
+  webshare_hunter.py   Webshare residential IP hunter with AI audio solver
+  grok_farm.py         Grok xAI automated account creator
+  tokenharbor.py       Token Harbor registration & API key harvester
+  tokenmix.py          TokenMix registration & API key harvester
+  zerotwo.py           ZeroTwo sign-up & Supabase JWT interceptor
+  browser.py           CDP browser controller & proxy router
+  browser_utils.py     Chromium/Brave locator & environment setup
+  proxy.py             Proxy pool with auto-discovery & rotation
+  proxy_bridge.py      Local bridge for authenticated Chromium proxies
+  router9.py           9Router API integration & model catalog sync
+  shim.py              OpenAI-compatible protocol bridge
+  mail.py              mail.tm disposable email client
+  engine.py            Concurrent orchestration & ledger management
+  config.py            Configuration models
+  cli.py               Typer CLI entrypoint
+main.py                Interactive TUI terminal dashboard
+tests/                 Unit and integration tests
+output/                Generated proxy outputs and WARP configs
+harvest/               Harvested session ledgers (JSONL)
 
 ## Requirements
 
