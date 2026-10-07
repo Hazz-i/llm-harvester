@@ -70,8 +70,8 @@ pip install -e ".[shim]"
 **1. Lancez le shim compatible OpenAI** (relie ZeroTwo → format OpenAI) :
 
 ```bash
-export ZT_ZT_COOKIES="cf_clearance=...; __csrf=..."
-export ZT_ZT_CSRF="<token from sessionStorage: zerotwo.csrf.token.v1>"
+export LLM_ZT_COOKIES="cf_clearance=...; __csrf=..."
+export LLM_ZT_CSRF="<token from sessionStorage: zerotwo.csrf.token.v1>"
 zt-harvester shim --port 8787
 ```
 

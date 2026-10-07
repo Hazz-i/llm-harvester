@@ -29,3 +29,8 @@ def test_pool_from_env(monkeypatch):
     monkeypatch.setenv("ZT_PROXIES", "1.1.1.1:1:u:p\n2.2.2.2:2:u:p")
     pool = ProxyPool.from_env()
     assert len(pool) == 2
+
+    monkeypatch.setenv("LLM_PROXIES", "3.3.3.3:3:u:p")
+    pool2 = ProxyPool.from_env()
+    assert len(pool2) == 1
+    assert pool2.proxies[0].host == "3.3.3.3"

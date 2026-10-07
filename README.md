@@ -142,7 +142,7 @@ These settings are used across all platforms:
 
 ```env
 # Browser CDP (Local Chromium/Chrome/Brave on port 9222)
-ZT_CDP_WS=ws://127.0.0.1:9222/devtools/browser/<id>
+LLM_CDP_WS=ws://127.0.0.1:9222/devtools/browser/<id>
 
 # 9Router AI Gateway (Local http://localhost:20128 or Remote https://nine.yourdomain.com)
 NINEROUTER_URL=https://nine.hazz.biz.id
@@ -160,10 +160,10 @@ Because ZeroTwo uses Supabase JWTs and session cookies instead of standard API k
 
 ```env
 # Base URL of the ZeroTwo shim (local laptop: http://127.0.0.1:8787/v1)
-ZT_SHIM_BASE_URL=http://localhost:8787/v1
+LLM_SHIM_BASE_URL=http://localhost:8787/v1
 
 # Optional: If running 9Router & Shim 24/7 on a remote VPS (Setup B)
-# ZT_REMOTE_SYNC=user@vps:/opt/llm-harvester/harvest/sessions.jsonl
+# LLM_REMOTE_SYNC=user@vps:/opt/llm-harvester/harvest/sessions.jsonl
 ```
 
 *(Note: `.env` or `config.toml` is automatically loaded by `llm-harvester`)*.
@@ -232,7 +232,7 @@ If you want to run everything on your **local machine (laptop)** without paying 
 ```env
 NINEROUTER_URL=http://localhost:20128
 NINEROUTER_API_KEY=sk_9router
-ZT_SHIM_BASE_URL=http://127.0.0.1:8787/v1
+LLM_SHIM_BASE_URL=http://127.0.0.1:8787/v1
 ```
 
 **Step-by-Step Flow:**
@@ -269,8 +269,8 @@ Use this setup to take advantage of your **laptop's residential ISP connection**
 NINEROUTER_URL=https://nine.yourdomain.com
 NINEROUTER_API_KEY=sk_...
 NINEROUTER_PASSWORD=your_password
-ZT_SHIM_BASE_URL=http://127.0.0.1:8787/v1
-ZT_REMOTE_SYNC=user@vps:/opt/llm-harvester/harvest/sessions.jsonl
+LLM_SHIM_BASE_URL=http://127.0.0.1:8787/v1
+LLM_REMOTE_SYNC=user@vps:/opt/llm-harvester/harvest/sessions.jsonl
 ```
 
 **Workflow:**
@@ -379,7 +379,7 @@ Proxies are applied to:
 > pools restrict access to a whitelisted source IP — verify with
 > `llm-harvester proxies --check` before a long run.
 
-Set `ZT_PROXIES` (newline/comma separated) or `ZT_PROXY_FILE` to configure the
+Set `LLM_PROXIES` (newline/comma separated) or `LLM_PROXY_FILE` to configure the
 pool through the environment.
 
 ## Python API

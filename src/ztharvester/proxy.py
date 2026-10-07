@@ -115,15 +115,15 @@ class ProxyPool:
         return pool
 
     @classmethod
-    def from_env(cls, var: str = "ZT_PROXIES", file_var: str = "ZT_PROXY_FILE") -> "ProxyPool":
+    def from_env(cls, var: str = "LLM_PROXIES", file_var: str = "LLM_PROXY_FILE") -> "ProxyPool":
         pool = cls()
-        inline = os.getenv(var, "")
+        inline = os.getenv(var, "") or (os.getenv("ZT_PROXIES", "") if var == "LLM_PROXIES" else "")
         for line in inline.replace(",", "\n").splitlines():
             pool.add(line)
-        path = os.getenv(file_var, "")
+        path = os.getenv(file_var, "") or (os.getenv("ZT_PROXY_FILE", "") if file_var == "LLM_PROXY_FILE" else "")
         if path and Path(path).exists():
             for line in Path(path).read_text().splitlines():
                 pool.add(line)
-        scheme = os.getenv("ZT_PROXY_SCHEME", "http")
+        scheme = os.getenv("LLM_PROXY_SCHEME") or os.getenv("ZT_PROXY_SCHEME", "http")
         pool.scheme = scheme
         return pool

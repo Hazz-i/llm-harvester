@@ -371,7 +371,7 @@ if typer is not None:
                     pool.add(line)
         c = _console()
         if not pool:
-            msg = "no proxies configured (use --proxy or ZT_PROXIES)"
+            msg = "no proxies configured (use --proxy or LLM_PROXIES)"
             c.print(f"[yellow]{msg}[/yellow]") if c else print(msg)
             return
         if not check:

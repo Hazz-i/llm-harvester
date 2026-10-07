@@ -7,7 +7,7 @@ can be plugged straight into 9Router as an OpenAI-compatible provider.
 
 Run it with::
 
-    zt-harvester shim --port 8787
+    llm-harvester shim --port 8787
 
 Then register the harvested sessions against ``http://<host>:8787/v1``.
 
@@ -20,7 +20,7 @@ GET  /healthz
 The shim reads the ZeroTwo JWT from the request's ``Authorization: Bearer``
 header, so a single shim process serves every harvested account. ZeroTwo's edge
 also expects the Cloudflare clearance cookie and a CSRF token, so those are
-configured once via ``ZT_ZT_COOKIES`` / ``ZT_ZT_CSRF`` (see ``.env.example``).
+configured once via ``LLM_ZT_COOKIES`` / ``LLM_ZT_CSRF`` (see ``.env.example``).
 """
 
 from __future__ import annotations
@@ -713,8 +713,8 @@ def build_app(shim: ZeroTwoShim | None = None, pool: SessionPool | None = None) 
     import os
     from pathlib import Path
 
-    default_cookies = os.getenv("ZT_ZT_COOKIES", "")
-    default_csrf = os.getenv("ZT_ZT_CSRF", "")
+    default_cookies = os.getenv("LLM_ZT_COOKIES") or os.getenv("ZT_ZT_COOKIES", "")
+    default_csrf = os.getenv("LLM_ZT_CSRF") or os.getenv("ZT_ZT_CSRF", "")
     if not default_cookies or not default_csrf:
         p = Path("harvest/sessions.jsonl")
         if p.exists():

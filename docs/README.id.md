@@ -141,7 +141,7 @@ Pengaturan ini digunakan untuk semua platform:
 
 ```env
 # Browser CDP (Chromium/Chrome/Brave lokal pada port 9222)
-ZT_CDP_WS=ws://127.0.0.1:9222/devtools/browser/<id>
+LLM_CDP_WS=ws://127.0.0.1:9222/devtools/browser/<id>
 
 # AI Gateway 9Router (Bisa lokal http://localhost:20128 atau remote https://nine.domainanda.com)
 NINEROUTER_URL=https://nine.hazz.biz.id
@@ -159,10 +159,10 @@ Karena ZeroTwo menggunakan session JWT Supabase dan cookie sesi (bukan API key s
 
 ```env
 # Base URL shim ZeroTwo (laptop lokal: http://127.0.0.1:8787/v1)
-ZT_SHIM_BASE_URL=http://localhost:8787/v1
+LLM_SHIM_BASE_URL=http://localhost:8787/v1
 
 # Opsional: Jika menjalankan 9Router & Shim 24/7 di VPS remote (Skenario B)
-# ZT_REMOTE_SYNC=user@ip-vps:/opt/llm-harvester/harvest/sessions.jsonl
+# LLM_REMOTE_SYNC=user@ip-vps:/opt/llm-harvester/harvest/sessions.jsonl
 ```
 
 *(Catatan: File `.env` atau `config.toml` otomatis dimuat oleh `llm-harvester`)*.
@@ -231,7 +231,7 @@ Jika Anda ingin menjalankan seluruh sistem di **laptop lokal** tanpa repot menge
 ```env
 NINEROUTER_URL=http://localhost:20128
 NINEROUTER_API_KEY=sk_9router
-ZT_SHIM_BASE_URL=http://127.0.0.1:8787/v1
+LLM_SHIM_BASE_URL=http://127.0.0.1:8787/v1
 ```
 
 **Alur Langkah-demi-Langkah:**
@@ -271,8 +271,8 @@ Gunakan skenario ini untuk memanfaatkan **koneksi internet rumahan laptop Anda**
 NINEROUTER_URL=https://nine.domainanda.com
 NINEROUTER_API_KEY=sk_...
 NINEROUTER_PASSWORD=password_dasbor_anda
-ZT_SHIM_BASE_URL=http://127.0.0.1:8787/v1
-ZT_REMOTE_SYNC=user@ip-vps:/opt/llm-harvester/harvest/sessions.jsonl
+LLM_SHIM_BASE_URL=http://127.0.0.1:8787/v1
+LLM_REMOTE_SYNC=user@ip-vps:/opt/llm-harvester/harvest/sessions.jsonl
 ```
 
 **Alur Langkah-demi-Langkah:**

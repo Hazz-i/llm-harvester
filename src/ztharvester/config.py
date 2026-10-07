@@ -108,11 +108,21 @@ class HarvesterConfig:
         except ImportError:
             pass
         cfg = cls()
-        cfg.target = os.getenv("ZT_TARGET", cfg.target)
-        cfg.mail.base_url = os.getenv("ZT_MAIL_BASE_URL", cfg.mail.base_url)
-        cfg.mail.domain = os.getenv("ZT_MAIL_DOMAIN") or None
-        cfg.zerotwo.name = os.getenv("ZT_NAME", cfg.zerotwo.name)
-        cfg.zerotwo.interest = os.getenv("ZT_INTEREST", cfg.zerotwo.interest)
+
+        def _get(key: str, default: Any = None) -> Any:
+            val = os.getenv(f"LLM_{key}")
+            if val is not None and val != "":
+                return val
+            zt_val = os.getenv(f"ZT_{key}")
+            if zt_val is not None and zt_val != "":
+                return zt_val
+            return default
+
+        cfg.target = _get("TARGET", cfg.target)
+        cfg.mail.base_url = _get("MAIL_BASE_URL", cfg.mail.base_url)
+        cfg.mail.domain = _get("MAIL_DOMAIN") or None
+        cfg.zerotwo.name = _get("NAME", cfg.zerotwo.name)
+        cfg.zerotwo.interest = _get("INTEREST", cfg.zerotwo.interest)
         cfg.tokenharbor.key_name_prefix = os.getenv("TH_KEY_PREFIX", cfg.tokenharbor.key_name_prefix)
         cfg.tokenharbor.api_base = os.getenv("TH_API_BASE", cfg.tokenharbor.api_base)
         cfg.tokenharbor.node_name = os.getenv("TH_NODE_NAME", cfg.tokenharbor.node_name)
@@ -126,22 +136,22 @@ class HarvesterConfig:
         cfg.router.api_key = os.getenv("NINEROUTER_API_KEY", cfg.router.api_key)
         cfg.router.password = os.getenv("NINEROUTER_PASSWORD") or None
         cfg.router.cookie = os.getenv("NINEROUTER_COOKIE") or None
-        cfg.router.shim_base_url = os.getenv("ZT_SHIM_BASE_URL", cfg.router.shim_base_url)
-        cfg.browser.cdp_ws = os.getenv("ZT_CDP_WS") or None
-        cfg.browser.cdp_url = os.getenv("ZT_CDP_URL") or None
+        cfg.router.shim_base_url = _get("SHIM_BASE_URL", cfg.router.shim_base_url)
+        cfg.browser.cdp_ws = _get("CDP_WS") or None
+        cfg.browser.cdp_url = _get("CDP_URL") or None
         cfg.browser.api_key = os.getenv("BROWSER_USE_API_KEY") or None
-        cfg.browser.mode = os.getenv("ZT_BROWSER_MODE", cfg.browser.mode)
-        cfg.concurrency = int(os.getenv("ZT_CONCURRENCY", str(cfg.concurrency)))
-        cfg.remote_sync = os.getenv("ZT_REMOTE_SYNC") or None
-        proxies = os.getenv("ZT_PROXIES", "")
+        cfg.browser.mode = _get("BROWSER_MODE", cfg.browser.mode)
+        cfg.concurrency = int(_get("CONCURRENCY", str(cfg.concurrency)))
+        cfg.remote_sync = _get("REMOTE_SYNC") or None
+        proxies = _get("PROXIES", "")
         if proxies.strip():
             cfg.proxy.enabled = True
             cfg.proxy.inline = [
                 p for p in proxies.replace(",", "\n").splitlines() if p.strip()
             ]
-        cfg.proxy.file = os.getenv("ZT_PROXY_FILE") or cfg.proxy.file
-        cfg.proxy.scheme = os.getenv("ZT_PROXY_SCHEME", cfg.proxy.scheme)
-        cfg.proxy.sticky = os.getenv("ZT_PROXY_STICKY", "1") not in ("0", "false", "False")
+        cfg.proxy.file = _get("PROXY_FILE") or cfg.proxy.file
+        cfg.proxy.scheme = _get("PROXY_SCHEME", cfg.proxy.scheme)
+        cfg.proxy.sticky = _get("PROXY_STICKY", "1") not in ("0", "false", "False")
         for key, value in overrides.items():
             if isinstance(value, dict) and hasattr(cfg, key):
                 section = getattr(cfg, key)

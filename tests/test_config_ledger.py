@@ -10,6 +10,11 @@ def test_config_env(monkeypatch):
     assert cfg.router.base_url == "http://x:1"
     assert cfg.concurrency == 3
 
+    # LLM_ prefix takes precedence over ZT_
+    monkeypatch.setenv("LLM_CONCURRENCY", "5")
+    cfg2 = HarvesterConfig.from_env()
+    assert cfg2.concurrency == 5
+
 
 def test_ledger_append_and_summary(tmp_path):
     led = Ledger(tmp_path / "s.jsonl")
