@@ -66,12 +66,48 @@ def _sync_remote(destination: str, output_dir: str, log: Any = print) -> bool:
         return False
 
 
+def _resolve_target(explicit_target: str | None, cfg_target: str = "select") -> str:
+    target_candidate = explicit_target or cfg_target or "select"
+    target_candidate = target_candidate.lower().strip()
+
+    if target_candidate in ("1", "zerotwo", "zt"):
+        return "zerotwo"
+    if target_candidate in ("2", "tokenharbor", "th"):
+        return "tokenharbor"
+    if target_candidate in ("3", "tokenmix", "tm"):
+        return "tokenmix"
+
+    c = _console()
+    prompt_text = (
+        "\n[bold yellow]?[/bold yellow] [bold]Select farming target:[/bold]\n"
+        "  [cyan][1][/cyan] ZeroTwo      (app.zerotwo.ai)    -> JWT Session, Cookies, 9Router\n"
+        "  [cyan][2][/cyan] Token Harbor (tokenharbor.ai)    -> API Key (thk_live_...), mail.tm\n"
+        "  [cyan][3][/cyan] TokenMix     (tokenmix.ai)       -> API Key (sk-tm-...), mail.tm\n"
+        "Choice [1-3] (default 1): "
+    )
+    if c:
+        c.print(prompt_text, end="")
+    else:
+        print(prompt_text, end="")
+    try:
+        ans = input().strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        ans = "1"
+
+    if ans in ("2", "tokenharbor", "th"):
+        return "tokenharbor"
+    if ans in ("3", "tokenmix", "tm"):
+        return "tokenmix"
+    return "zerotwo"
+
+
 if typer is not None:
     app = typer.Typer(add_completion=False, help="Bulk ZeroTwo account creator + 9Router harvester")
 
     @app.command()
     def run(
         count: int = typer.Option(1, "--count", "-n", help="Number of accounts to create"),
+        target: str | None = typer.Option(None, "--target", "-t", help="Target platform: zerotwo | tokenharbor | tokenmix | select"),
         config: Path | None = typer.Option(None, "--config", "-c", help="TOML config file"),
         cdp_ws: str | None = typer.Option(None, "--cdp-ws", help="CDP websocket URL of a browser"),
         cdp_url: str | None = typer.Option(None, "--cdp-url", help="CDP HTTP endpoint (cloud browser)"),
@@ -92,6 +128,9 @@ if typer is not None:
             if config and config.exists()
             else HarvesterConfig.from_env()
         )
+        selected_target = _resolve_target(target, cfg.target)
+        cfg.target = selected_target
+        _log(f"[target] Active farming target: {selected_target}")
         if proxy:
             cfg.proxy.enabled = True
             cfg.proxy.inline = list(proxy)

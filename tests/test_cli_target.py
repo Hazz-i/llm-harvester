@@ -1,0 +1,27 @@
+from ztharvester.cli import _resolve_target
+
+
+def test_resolve_target_explicit():
+    assert _resolve_target("zerotwo", "select") == "zerotwo"
+    assert _resolve_target("tokenharbor", "select") == "tokenharbor"
+    assert _resolve_target("tokenmix", "select") == "tokenmix"
+    assert _resolve_target("1", "select") == "zerotwo"
+    assert _resolve_target("2", "select") == "tokenharbor"
+    assert _resolve_target("3", "select") == "tokenmix"
+
+
+def test_resolve_target_config():
+    assert _resolve_target(None, "tokenharbor") == "tokenharbor"
+    assert _resolve_target(None, "tokenmix") == "tokenmix"
+    assert _resolve_target(None, "zerotwo") == "zerotwo"
+
+
+def test_resolve_target_interactive_input(monkeypatch):
+    monkeypatch.setattr("builtins.input", lambda: "2")
+    assert _resolve_target(None, "select") == "tokenharbor"
+
+    monkeypatch.setattr("builtins.input", lambda: "3")
+    assert _resolve_target(None, "select") == "tokenmix"
+
+    monkeypatch.setattr("builtins.input", lambda: "1")
+    assert _resolve_target(None, "select") == "zerotwo"
