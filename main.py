@@ -132,9 +132,9 @@ def menu_run_harvester() -> None:
     # Token Harbor & ZeroTwo: Cloudflare/Supabase bot-detection breaks in headless mode
     if choice in ("1", "3"):
         platform_name = "Token Harbor" if choice == "1" else "ZeroTwo"
+        extra = " Proxy routing also disabled — direct connection required." if choice == "1" else ""
         console.print(
-            f"[yellow dim]ℹ  {platform_name} is incompatible with headless mode "
-            "(Cloudflare Turnstile / bot-detection). Running in Visible Window.[/yellow dim]"
+            f"[yellow dim]ℹ  {platform_name} requires Visible Window (Cloudflare bot-detection).{extra}[/yellow dim]"
         )
         is_headless = False
     else:
@@ -158,7 +158,8 @@ def menu_run_harvester() -> None:
     cmd = [sys.executable, "-m", "llmharvester.cli", "run", "--target", t, "--count", str(count)]
     if is_headless:
         cmd.append("--headless")
-    if Path("proxies.txt").exists():
+    # Token Harbor blocks ALL proxy/VPN exits — use direct connection only
+    if t != "tokenharbor" and Path("proxies.txt").exists():
         cmd.extend(["--proxy-file", "proxies.txt"])
 
     subprocess.run(cmd)
