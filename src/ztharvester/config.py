@@ -24,6 +24,21 @@ class ZeroTwoConfig:
 
 
 @dataclass
+class TokenHarborConfig:
+    key_name_prefix: str = "prod-th"
+    wait_seconds: float = 120.0
+    max_retries: int = 2
+
+
+@dataclass
+class TokenMixConfig:
+    key_name_prefix: str = "prod-tm"
+    referral_code: str | None = None
+    wait_seconds: float = 120.0
+    max_retries: int = 2
+
+
+@dataclass
 class RouterConfig:
     base_url: str = "http://localhost:20128"
     api_key: str = "sk_9router"
@@ -65,8 +80,11 @@ class ProxyConfig:
 
 @dataclass
 class HarvesterConfig:
+    target: str = "select"  # select | zerotwo | tokenharbor | tokenmix
     mail: MailConfig = field(default_factory=MailConfig)
     zerotwo: ZeroTwoConfig = field(default_factory=ZeroTwoConfig)
+    tokenharbor: TokenHarborConfig = field(default_factory=TokenHarborConfig)
+    tokenmix: TokenMixConfig = field(default_factory=TokenMixConfig)
     router: RouterConfig = field(default_factory=RouterConfig)
     browser: BrowserConfig = field(default_factory=BrowserConfig)
     proxy: ProxyConfig = field(default_factory=ProxyConfig)
@@ -83,10 +101,14 @@ class HarvesterConfig:
         except ImportError:
             pass
         cfg = cls()
+        cfg.target = os.getenv("ZT_TARGET", cfg.target)
         cfg.mail.base_url = os.getenv("ZT_MAIL_BASE_URL", cfg.mail.base_url)
         cfg.mail.domain = os.getenv("ZT_MAIL_DOMAIN") or None
         cfg.zerotwo.name = os.getenv("ZT_NAME", cfg.zerotwo.name)
         cfg.zerotwo.interest = os.getenv("ZT_INTEREST", cfg.zerotwo.interest)
+        cfg.tokenharbor.key_name_prefix = os.getenv("TH_KEY_PREFIX", cfg.tokenharbor.key_name_prefix)
+        cfg.tokenmix.key_name_prefix = os.getenv("TM_KEY_PREFIX", cfg.tokenmix.key_name_prefix)
+        cfg.tokenmix.referral_code = os.getenv("TM_REFERRAL") or cfg.tokenmix.referral_code
         cfg.router.base_url = os.getenv("NINEROUTER_URL", cfg.router.base_url)
         cfg.router.api_key = os.getenv("NINEROUTER_API_KEY", cfg.router.api_key)
         cfg.router.password = os.getenv("NINEROUTER_PASSWORD") or None
@@ -122,8 +144,11 @@ class HarvesterConfig:
 
         data = tomllib.loads(Path(path).read_text())
         return cls(
+            target=data.get("target", "select"),
             mail=MailConfig(**data.get("mail", {})),
             zerotwo=ZeroTwoConfig(**data.get("zerotwo", {})),
+            tokenharbor=TokenHarborConfig(**data.get("tokenharbor", {})),
+            tokenmix=TokenMixConfig(**data.get("tokenmix", {})),
             router=RouterConfig(**data.get("router", {})),
             browser=BrowserConfig(**data.get("browser", {})),
             proxy=ProxyConfig(**data.get("proxy", {})),

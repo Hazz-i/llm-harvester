@@ -1,4 +1,5 @@
 # zt-farming configuration
+target = "select"  # select (prompt interactive) | zerotwo | tokenharbor | tokenmix
 concurrency = 1
 output_dir = "harvest"
 
@@ -11,6 +12,17 @@ prefix = "zt"
 name = "Burz"
 interest = "Just exploring"
 wait_seconds = 240.0
+max_retries = 2
+
+[tokenharbor]
+key_name_prefix = "prod-th"
+wait_seconds = 120.0
+max_retries = 2
+
+[tokenmix]
+key_name_prefix = "prod-tm"
+# referral_code = ""
+wait_seconds = 120.0
 max_retries = 2
 
 [router]
