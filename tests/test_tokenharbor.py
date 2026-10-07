@@ -18,6 +18,14 @@ class MockCDP:
 
     async def evaluate(self, expression: str, await_promise: bool = False):
         self.evaluations.append(expression)
+        if "location.href" in expression:
+            if any("api-keys" in u for u in self.navigated):
+                return "https://tokenharbor.ai/dashboard/api-keys"
+            if any("signup" in u for u in self.navigated):
+                return "https://tokenharbor.ai/dashboard"
+            return "https://tokenharbor.ai/dashboard"
+        if "data-bordered" in expression:
+            return None
         if "thk_live_" in expression or "api-key" in expression:
             return "thk_live_1234567890abcdef"
         return True

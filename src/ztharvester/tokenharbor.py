@@ -77,14 +77,16 @@ class TokenHarborCreator:
     async def _reset_session(self) -> None:
         """Clear local/session storage and cookies for tokenharbor."""
         try:
-            await self.cdp.navigate("about:blank", wait_ms=2000)
-            if hasattr(self.cdp, "_send"):
+            if hasattr(self.cdp, "clear_session"):
+                await self.cdp.clear_session(self.APP_ORIGIN)
+            elif hasattr(self.cdp, "_send"):
                 try:
                     await self.cdp._send(
                         "Storage.clearDataForOrigin",
                         {"origin": self.APP_ORIGIN, "storageTypes": "all"},
+                        session=True,
                     )
-                    await self.cdp._send("Network.clearBrowserCookies", {})
+                    await self.cdp._send("Network.clearBrowserCookies", {}, session=True)
                 except Exception:
                     pass
         except Exception:
@@ -150,6 +152,40 @@ class TokenHarborCreator:
         await self.cdp.navigate(self.SIGNUP_URL, wait_ms=10000)
         await self._sleep(2500)
 
+        # Check if redirected to dashboard (session persisted): purge and re-navigate
+        curr_url = await self.cdp.evaluate("window.location.href")
+        if curr_url and "dashboard" in str(curr_url):
+            self.log("[tokenharbor] Session persisted, clearing storage and re-navigating...")
+            if hasattr(self.cdp, "clear_session"):
+                await self.cdp.clear_session(self.APP_ORIGIN)
+            await self.cdp.evaluate(
+                """(()=>{
+                    try { localStorage.clear(); sessionStorage.clear(); } catch(e){}
+                    try {
+                        document.cookie.split(';').forEach(c => {
+                            const n = c.split('=')[0].trim();
+                            document.cookie = n + '=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
+                            document.cookie = n + '=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=.tokenharbor.ai';
+                        });
+                    } catch(e){}
+                })()"""
+            )
+            await self.cdp.navigate(self.SIGNUP_URL, wait_ms=10000)
+            await self._sleep(3000)
+
+        # Wait for Next.js to hydrate the form inputs
+        self.log("[tokenharbor] Waiting for signup form hydration...")
+        form_ready = False
+        for _ in range(15):
+            has_input = await self.cdp.evaluate("!!document.querySelector('input[type=\"email\"]')")
+            if has_input:
+                form_ready = True
+                break
+            await self._sleep(1000)
+
+        if not form_ready:
+            raise RuntimeError("Signup form failed to render email input")
+
         # 2. Fill email and password
         await self.cdp.evaluate(
             """(()=>{
@@ -177,10 +213,18 @@ class TokenHarborCreator:
 
         # 4. Submit form (specifically target the submit / "Create account" button, NOT the tab switcher)
         self.log("[tokenharbor] Submitting signup form...")
-        for submit_attempt in range(1, 4):
-            # Ensure password is filled (if error cleared it)
+        signup_ok = False
+        for submit_attempt in range(1, 5):
+            # Ensure email & password are typed (if error cleared it)
             await self.cdp.evaluate(
                 """(()=>{
+                    const em = document.querySelector('input[type="email"]');
+                    if (em && !em.value) {
+                        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+                        setter.call(em, %s);
+                        em.dispatchEvent(new Event('input', {bubbles: true}));
+                        em.dispatchEvent(new Event('change', {bubbles: true}));
+                    }
                     const pw = document.querySelector('input[type="password"]') || document.querySelector('#password');
                     if (pw && !pw.value) {
                         const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
@@ -196,12 +240,13 @@ class TokenHarborCreator:
                         return true;
                     }
                     return false;
-                })()""" % json.dumps(password)
+                })()""" % (json.dumps(email), json.dumps(password))
             )
             await self._sleep(4000)
 
             curr_url = await self.cdp.evaluate("window.location.href")
             if curr_url and "dashboard" in str(curr_url):
+                signup_ok = True
                 break
 
             # Check if human check or rate limit error appeared
@@ -222,14 +267,14 @@ class TokenHarborCreator:
             else:
                 await self._sleep(2000)
 
-        # 5. Check if we reached dashboard or need navigation to dashboard
-        curr_url = await self.cdp.evaluate("window.location.href")
-        if not curr_url or "dashboard" not in str(curr_url):
-            await self.cdp.navigate("https://tokenharbor.ai/dashboard", wait_ms=8000)
-            await self._sleep(3000)
+        if not signup_ok:
+            curr_url = await self.cdp.evaluate("window.location.href")
+            if not curr_url or "dashboard" not in str(curr_url):
+                raise RuntimeError("Failed to reach dashboard after submitting signup form")
 
-        # 6. On dashboard: dismiss/accept free models modal, and trigger "Verify email"
+        # 5. On dashboard: dismiss/accept free models modal, and trigger "Verify email"
         self.log("[tokenharbor] Reached dashboard, triggering verification email...")
+        await self._sleep(3000)
         await self.cdp.evaluate(
             """(()=>{
                 // Click "Enable free models" if banner/modal exists
@@ -237,20 +282,25 @@ class TokenHarborCreator:
                 if (freeBtn) freeBtn.click();
             })()"""
         )
-        await self._sleep(1500)
+        await self._sleep(2000)
 
-        # Click the "Verify email" button on the dashboard banner
-        verified_clicked = await self.cdp.evaluate(
-            """(()=>{
-                const btn = [...document.querySelectorAll('button')].find(b => /^verify email$/i.test((b.innerText || '').trim()));
-                if (btn) {
-                    btn.click();
-                    return true;
-                }
-                return false;
-            })()"""
-        )
-        self.log(f"[tokenharbor] Clicked dashboard 'Verify email' button ({verified_clicked})")
+        # Click the "Verify email" button on the dashboard banner (retry up to 5 times)
+        verified_clicked = False
+        for _ in range(5):
+            verified_clicked = await self.cdp.evaluate(
+                """(()=>{
+                    const btn = [...document.querySelectorAll('button')].find(b => /verify email/i.test((b.innerText || '').trim()));
+                    if (btn) {
+                        btn.click();
+                        return true;
+                    }
+                    return false;
+                })()"""
+            )
+            if verified_clicked:
+                break
+            await self._sleep(2000)
+        self.log(f"[tokenharbor] Clicked dashboard 'Verify email' button ({bool(verified_clicked)})")
         await self._sleep(3000)
 
         # 7. Wait for verification email from mail.tm

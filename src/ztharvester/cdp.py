@@ -109,6 +109,22 @@ class LocalCDP:
         await self._ws.send(json.dumps(payload))
         return await fut
 
+    async def clear_session(self, origin: str | None = None) -> None:
+        """Clear cookies and web storage for the session."""
+        if origin:
+            try:
+                await self._send(
+                    "Storage.clearDataForOrigin",
+                    {"origin": origin, "storageTypes": "all"},
+                    session=True,
+                )
+            except Exception:
+                pass
+        try:
+            await self._send("Network.clearBrowserCookies", {}, session=True)
+        except Exception:
+            pass
+
     async def navigate(self, url: str, wait_ms: int = 15000) -> None:
         await self._send("Page.navigate", {"url": url}, session=True)
         await self._wait_ready(wait_ms)
