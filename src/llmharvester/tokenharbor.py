@@ -94,8 +94,18 @@ class TokenHarborCreator:
 
     async def _wait_for_turnstile(self, timeout_seconds: float = 30.0) -> bool:
         """Wait for Cloudflare Turnstile token to be populated if widget is present."""
+        # Wait up to 6 seconds for widget/input to mount in DOM
+        widget_deadline = time.monotonic() + 6.0
+        while time.monotonic() < widget_deadline:
+            has_widget = await self.cdp.evaluate(
+                "!!document.querySelector('input[name=\"cf-turnstile-response\"], [data-turnstile], iframe[src*=\"challenges\"], [id*=\"turnstile\" i], [class*=\"turnstile\" i]')"
+            )
+            if has_widget:
+                break
+            await self._sleep(800)
+
         has_widget = await self.cdp.evaluate(
-            "!!document.querySelector('input[name=\"cf-turnstile-response\"], [data-turnstile], iframe[src*=\"challenges\"]')"
+            "!!document.querySelector('input[name=\"cf-turnstile-response\"], [data-turnstile], iframe[src*=\"challenges\"], [id*=\"turnstile\" i], [class*=\"turnstile\" i]')"
         )
         if not has_widget:
             return True
@@ -216,7 +226,7 @@ class TokenHarborCreator:
             self.log(f"[tokenharbor] Form hydration failed. Page state: {page_info}")
             raise RuntimeError(f"Signup form failed to render email input (URL: {page_info.get('url') if isinstance(page_info, dict) else 'unknown'})")
 
-        # 2. Fill email and password helper
+        # 2. Fill email and password once
         async def _fill_credentials():
             await self.cdp.evaluate(
                 """(()=>{
@@ -238,21 +248,17 @@ class TokenHarborCreator:
             )
 
         await _fill_credentials()
-        await self._sleep(1500)
+        await self._sleep(2000)
 
-        # 3. Check if Turnstile is already present on the page
-        has_turnstile = await self.cdp.evaluate(
-            "!!document.querySelector('input[name=\"cf-turnstile-response\"], iframe[src*=\"challenges\"]')"
-        )
-        if has_turnstile:
-            await self._wait_for_turnstile(timeout_seconds=20.0)
+        # 3. Always wait for Cloudflare Turnstile token before submitting
+        await self._wait_for_turnstile(timeout_seconds=25.0)
+        # Natural human pause after Turnstile is solved to avoid "take a breath / too fast" rate-limiting
+        await self._sleep(2500)
 
-        # 4. Submit form (specifically target the submit / "Create account" button, NOT the tab switcher)
+        # 4. Submit form
         self.log("[tokenharbor] Submitting signup form...")
         signup_ok = False
         for submit_attempt in range(1, 6):
-            await _fill_credentials()
-
             # Click Create account submit button
             await self.cdp.evaluate(
                 """(()=>{
@@ -266,21 +272,22 @@ class TokenHarborCreator:
                     return false;
                 })()"""
             )
-            await self._sleep(4000)
+            await self._sleep(4500)
 
             curr_url = await self.cdp.evaluate("window.location.href")
             if curr_url and "dashboard" in str(curr_url):
                 signup_ok = True
                 break
 
-            # Check for error or notification message
+            # Check for error or notification message on leaf elements (avoid matching page container)
             err_msg = await self.cdp.evaluate(
                 """(()=>{
                     const p = document.querySelector('p[data-bordered="true"]');
                     if (p && p.innerText) return p.innerText.trim();
                     const alerts = [...document.querySelectorAll('p, div, span')].filter(el => {
+                        if (el.children.length > 0) return false;
                         const t = (el.innerText || '').trim();
-                        return /bot check|human check|take a breath|fast|error|snapped|failed/i.test(t);
+                        return t.length > 0 && t.length < 250 && /bot check|human check|take a breath|fast|error|snapped|failed|couldn't create/i.test(t);
                     });
                     return alerts.length > 0 ? alerts[0].innerText.trim() : null;
                 })()"""
@@ -290,20 +297,21 @@ class TokenHarborCreator:
                 err_lower = str(err_msg).lower()
                 if "too many sign-ups" in err_lower or "too many signups" in err_lower:
                     raise RuntimeError(f"Rate limited by Token Harbor: {err_msg}. Use proxy pool to rotate IP.")
-                elif "bot check" in err_lower or "snapped" in err_lower or "refresh" in err_lower:
+                elif "take a breath" in err_lower or "fast" in err_lower:
+                    self.log("[tokenharbor] Backing off 8s due to pace throttle...")
+                    await self._sleep(8000)
+                elif "human check" in err_lower:
+                    self.log("[tokenharbor] Human verification requested. Waiting for Turnstile...")
+                    await self._wait_for_turnstile(timeout_seconds=25.0)
+                    await self._sleep(2500)
+                elif "bot check" in err_lower or "snapped" in err_lower:
                     self.log("[tokenharbor] Refreshing signup page after bot check notice...")
                     await self.cdp.navigate(self.SIGNUP_URL, wait_ms=10000)
                     await self._sleep(3000)
                     await _fill_credentials()
+                    await self._sleep(2000)
                     await self._wait_for_turnstile(timeout_seconds=25.0)
-                elif "human check" in err_lower:
-                    self.log("[tokenharbor] Human verification challenge active. Waiting for Turnstile...")
-                    await self._wait_for_turnstile(timeout_seconds=30.0)
-                    await self._sleep(1500)
-                    await _fill_credentials()
-                elif "take a breath" in err_lower or "fast" in err_lower:
-                    await self._sleep(8000)
-                    await _fill_credentials()
+                    await self._sleep(2500)
             else:
                 await self._sleep(2000)
 
