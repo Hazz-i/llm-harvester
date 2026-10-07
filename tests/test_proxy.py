@@ -1,4 +1,4 @@
-from ztharvester.proxy import Proxy, ProxyPool
+from llmharvester.proxy import Proxy, ProxyPool
 
 
 def test_parse_userpass():
@@ -11,6 +11,18 @@ def test_parse_userpass():
 def test_parse_hostport():
     p = Proxy.parse("127.0.0.1:8080")
     assert p.url == "http://127.0.0.1:8080"
+
+
+def test_parse_url_format():
+    p = Proxy.parse("http://tjmyggsm:hkse3ppw95jx@31.59.20.176:6754")
+    assert p.host == "31.59.20.176" and p.port == 6754
+    assert p.username == "tjmyggsm" and p.password == "hkse3ppw95jx"
+    assert p.scheme == "http"
+    assert p.url == "http://tjmyggsm:hkse3ppw95jx@31.59.20.176:6754"
+
+    p2 = Proxy.parse("socks5://user:pass@1.2.3.4:1080")
+    assert p2.scheme == "socks5"
+    assert p2.url == "socks5://user:pass@1.2.3.4:1080"
 
 
 def test_pool_round_robin_and_sticky():

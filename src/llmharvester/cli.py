@@ -115,6 +115,7 @@ if typer is not None:
         router_url: str | None = typer.Option(None, "--router-url", help="9Router base URL"),
         shim_url: str | None = typer.Option(None, "--shim-base-url", help="OpenAI-compatible shim base URL"),
         no_router: bool = typer.Option(False, "--no-router", help="Skip 9Router registration"),
+        headless: bool = typer.Option(False, "--headless", "-h", help="Run browser in background/headless mode"),
         proxy: list[str] = typer.Option(None, "--proxy", help="Proxy host:port:user:pass (repeatable)"),
         proxy_file: str | None = typer.Option(None, "--proxy-file", help="File with one proxy per line"),
         concurrency: int | None = typer.Option(None, "--concurrency", help="Parallel sign-ups"),
@@ -131,6 +132,8 @@ if typer is not None:
         selected_target = _resolve_target(target, cfg.target)
         cfg.target = selected_target
         _log(f"[target] Active farming target: {selected_target}")
+        if headless:
+            cfg.browser.headless = True
         if proxy:
             cfg.proxy.enabled = True
             cfg.proxy.inline = list(proxy)

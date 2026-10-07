@@ -1,4 +1,4 @@
-from ztharvester.shim import split_model, ZeroTwoShim
+from llmharvester.shim import split_model, ZeroTwoShim
 
 
 def test_split_model_prefixed():
@@ -31,7 +31,7 @@ def test_body_shape():
 
 
 def test_extract_jwt_claims():
-    from ztharvester.shim import _extract_jwt_claims
+    from llmharvester.shim import _extract_jwt_claims
     import base64
     import json
     import time
@@ -50,7 +50,7 @@ def test_extract_jwt_claims():
 
 
 def test_find_session():
-    from ztharvester.shim import _find_session
+    from llmharvester.shim import _find_session
     import base64
     import json
     import time
@@ -93,7 +93,7 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_session_pool_load_and_atomic_save(tmp_path):
-    from ztharvester.shim import SessionPool
+    from llmharvester.shim import SessionPool
 
     file_path = tmp_path / "sessions.jsonl"
     pool = SessionPool(file_path)
@@ -110,7 +110,7 @@ async def test_session_pool_load_and_atomic_save(tmp_path):
 @pytest.mark.asyncio
 async def test_session_pool_refresh_all(tmp_path, monkeypatch):
     import time
-    from ztharvester.shim import SessionPool, _extract_jwt_claims
+    from llmharvester.shim import SessionPool, _extract_jwt_claims
     import base64
     import json
 
@@ -136,7 +136,7 @@ async def test_session_pool_refresh_all(tmp_path, monkeypatch):
             return "new-jwt-1", "new-rt-1"
         return None, None
 
-    monkeypatch.setattr("ztharvester.shim.refresh_supabase_token", mock_refresh)
+    monkeypatch.setattr("llmharvester.shim.refresh_supabase_token", mock_refresh)
 
     stats = await pool.refresh_all(threshold_seconds=1200.0)
     assert stats["refreshed"] == 1
@@ -153,7 +153,7 @@ async def test_session_pool_failover_to_healthy(tmp_path, monkeypatch):
     import time
     import json
     import base64
-    from ztharvester.shim import SessionPool
+    from llmharvester.shim import SessionPool
 
     file_path = tmp_path / "sessions.jsonl"
     pool = SessionPool(file_path)
@@ -171,7 +171,7 @@ async def test_session_pool_failover_to_healthy(tmp_path, monkeypatch):
     async def mock_refresh(rt):
         return None, None
 
-    monkeypatch.setattr("ztharvester.shim.refresh_supabase_token", mock_refresh)
+    monkeypatch.setattr("llmharvester.shim.refresh_supabase_token", mock_refresh)
 
     # Requesting dead token should failover to healthy session
     chosen = await pool.get_healthy_session("expired-tok")
@@ -185,7 +185,7 @@ async def test_build_app_lifespan_starts_auto_refresh(tmp_path, monkeypatch):
     import time
     import json
     import base64
-    from ztharvester.shim import SessionPool, build_app
+    from llmharvester.shim import SessionPool, build_app
 
     file_path = tmp_path / "sessions.jsonl"
     pool = SessionPool(file_path)
@@ -203,7 +203,7 @@ async def test_build_app_lifespan_starts_auto_refresh(tmp_path, monkeypatch):
         refreshed = True
         return "new-jwt-1", "new-rt-1"
 
-    monkeypatch.setattr("ztharvester.shim.refresh_supabase_token", mock_refresh)
+    monkeypatch.setattr("llmharvester.shim.refresh_supabase_token", mock_refresh)
 
     app = build_app(pool=pool)
 

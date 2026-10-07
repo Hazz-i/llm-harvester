@@ -1,4 +1,4 @@
-from ztharvester.zerotwo import ZeroTwoCreator
+from llmharvester.zerotwo import ZeroTwoCreator
 
 
 class _Msg:

@@ -1,9 +1,9 @@
 import pytest
 from unittest.mock import AsyncMock, patch
-from ztharvester.config import HarvesterConfig, TokenHarborConfig, TokenMixConfig
-from ztharvester.engine import Harvester
-from ztharvester.router9 import NineRouterClient, RouterResult
-from ztharvester.tokenharbor import HarvestedKey
+from llmharvester.config import HarvesterConfig, TokenHarborConfig, TokenMixConfig
+from llmharvester.engine import Harvester
+from llmharvester.router9 import NineRouterClient, RouterResult
+from llmharvester.tokenharbor import HarvestedKey
 
 
 @pytest.mark.asyncio
@@ -78,9 +78,9 @@ async def test_engine_pushes_tokenharbor_to_router(tmp_path):
     fake_router.connect_session = AsyncMock(return_value=RouterResult(ok=True, connection_id="c1"))
 
     with patch.object(harvester, "_make_cdp", new_callable=AsyncMock), \
-         patch("ztharvester.engine.TokenHarborCreator") as MockCreator, \
-         patch("ztharvester.engine.MailProvider"), \
-         patch("ztharvester.engine.NineRouterClient", return_value=fake_router):
+         patch("llmharvester.engine.TokenHarborCreator") as MockCreator, \
+         patch("llmharvester.engine.MailProvider"), \
+         patch("llmharvester.engine.NineRouterClient", return_value=fake_router):
 
         instance = MockCreator.return_value
         instance.create_account = AsyncMock(return_value=fake_key)
@@ -124,9 +124,9 @@ async def test_engine_pushes_tokenmix_to_router(tmp_path):
     fake_router.connect_session = AsyncMock(return_value=RouterResult(ok=True, connection_id="c2"))
 
     with patch.object(harvester, "_make_cdp", new_callable=AsyncMock), \
-         patch("ztharvester.engine.TokenMixCreator") as MockCreator, \
-         patch("ztharvester.engine.MailProvider"), \
-         patch("ztharvester.engine.NineRouterClient", return_value=fake_router):
+         patch("llmharvester.engine.TokenMixCreator") as MockCreator, \
+         patch("llmharvester.engine.MailProvider"), \
+         patch("llmharvester.engine.NineRouterClient", return_value=fake_router):
 
         instance = MockCreator.return_value
         instance.create_account = AsyncMock(return_value=fake_key)

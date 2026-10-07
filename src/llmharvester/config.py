@@ -1,4 +1,4 @@
-"""Configuration models for zt-harvester."""
+"""Configuration models for llm-harvester."""
 
 from __future__ import annotations
 
@@ -65,7 +65,7 @@ class BrowserConfig:
     cdp_ws: str | None = None
     cdp_url: str | None = None
     api_key: str | None = None
-    headless: bool = True
+    headless: bool = False
     launch_path: str | None = None
     # When true, the browser's own traffic exits through a pool proxy. Local
     # Chromium cannot change proxy per tab, so this applies to cloud browsers
@@ -141,6 +141,7 @@ class HarvesterConfig:
         cfg.browser.cdp_url = _get("CDP_URL") or None
         cfg.browser.api_key = os.getenv("BROWSER_USE_API_KEY") or None
         cfg.browser.mode = _get("BROWSER_MODE", cfg.browser.mode)
+        cfg.browser.headless = _get("HEADLESS", "0").lower() in ("1", "true", "yes")
         cfg.concurrency = int(_get("CONCURRENCY", str(cfg.concurrency)))
         cfg.remote_sync = _get("REMOTE_SYNC") or None
         proxies = _get("PROXIES", "")
@@ -150,6 +151,13 @@ class HarvesterConfig:
                 p for p in proxies.replace(",", "\n").splitlines() if p.strip()
             ]
         cfg.proxy.file = _get("PROXY_FILE") or cfg.proxy.file
+        if not cfg.proxy.file and not cfg.proxy.inline:
+            default_p = Path("proxies.txt")
+            if default_p.exists() and default_p.stat().st_size > 0:
+                cfg.proxy.file = str(default_p)
+                cfg.proxy.enabled = True
+        elif cfg.proxy.file:
+            cfg.proxy.enabled = True
         cfg.proxy.scheme = _get("PROXY_SCHEME", cfg.proxy.scheme)
         cfg.proxy.sticky = _get("PROXY_STICKY", "1") not in ("0", "false", "False")
         for key, value in overrides.items():

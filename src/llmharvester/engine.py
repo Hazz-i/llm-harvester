@@ -75,23 +75,58 @@ class Harvester:
         if b.mode == "cloud" and b.cdp_url:
             cdp = HttpCDP(b.cdp_url, b.api_key)
             return await cdp.connect()
-        if b.cdp_ws:
-            return await LocalCDP(b.cdp_ws).connect()
+
+        async def _probe_local_ws(target_url: str = "http://127.0.0.1:9222") -> str | None:
+            import httpx
+            from urllib.parse import urlparse
+
+            try:
+                parsed = urlparse(target_url)
+                host = parsed.hostname or "127.0.0.1"
+                port = parsed.port or 9222
+                if host in ("127.0.0.1", "localhost", "0.0.0.0"):
+                    async with httpx.AsyncClient(timeout=2) as client:
+                        r = await client.get(f"http://{host}:{port}/json/version")
+                        if r.status_code == 200:
+                            return r.json().get("webSocketDebuggerUrl")
+            except Exception:
+                pass
+            return None
+
+        from .browser import update_env_cdp_ws, ensure_cdp_browser
+
         if b.cdp_url:
             cdp = HttpCDP(b.cdp_url, b.api_key)
             return await cdp.connect()
-        # No endpoint configured: launch a local Chromium, optionally proxied.
-        from .browser import ChromeLauncher
 
-        launcher = ChromeLauncher(
-            chrome=b.launch_path,
-            proxy=proxy,
-            headless=b.headless,
-        )
-        ws = await asyncio.get_event_loop().run_in_executor(None, launcher.start)
-        cdp = await LocalCDP(ws).connect()
-        cdp._launcher = launcher  # type: ignore[attr-defined]
-        return cdp
+        # If proxy is provided, ensure local browser is routed via proxy bridge
+        if proxy or not b.cdp_ws:
+            live_ws = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: ensure_cdp_browser(port=9222, headless=b.headless, proxy=proxy, log_func=self.log)
+            )
+            b.cdp_ws = live_ws
+            update_env_cdp_ws(live_ws)
+            return await LocalCDP(live_ws).connect()
+
+        if b.cdp_ws:
+            try:
+                return await LocalCDP(b.cdp_ws).connect()
+            except Exception:
+                fresh_ws = await _probe_local_ws(b.cdp_ws)
+                if fresh_ws and fresh_ws != b.cdp_ws:
+                    self.log(f"[cdp] Existing cdp_ws expired, auto-recovered fresh endpoint: {fresh_ws}")
+                    b.cdp_ws = fresh_ws
+                    update_env_cdp_ws(fresh_ws)
+                    return await LocalCDP(fresh_ws).connect()
+                self.log(f"[cdp] Configured cdp_ws unreachable. Auto-activating CDP browser on port 9222...")
+                live_ws = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: ensure_cdp_browser(port=9222, headless=b.headless, proxy=proxy, log_func=self.log)
+                )
+                b.cdp_ws = live_ws
+                update_env_cdp_ws(live_ws)
+                return await LocalCDP(live_ws).connect()
 
     async def create_one(
         self,

@@ -119,6 +119,15 @@ pip install -e ".[shim]"
 Jalankan Chromium, Google Chrome, atau Brave Browser dengan port debugging aktif:
 
 ```bash
+# Direkomendasikan: Otomatis menjalankan browser dan mengisi LLM_CDP_WS di .env:
+./start-browser.sh
+# Atau jalan di background:
+./start-browser.sh --bg
+```
+
+Atau jalankan secara manual:
+
+```bash
 # Brave Browser
 brave-browser --remote-debugging-port=9222 --user-data-dir=./chrome-data
 
@@ -126,7 +135,7 @@ brave-browser --remote-debugging-port=9222 --user-data-dir=./chrome-data
 google-chrome --remote-debugging-port=9222 --user-data-dir=./chrome-data
 ```
 
-Dapatkan URL WebSocket debugger lewat: `curl -s http://127.0.0.1:9222/json/version`.
+*(Catatan: `llm-harvester` juga otomatis mendeteksi browser aktif di port 9222 dan memperbarui `.env` secara dinamis!)*
 
 ### 2. Konfigurasi `.env` atau `config.toml`
 

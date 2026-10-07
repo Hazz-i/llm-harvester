@@ -1,8 +1,8 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
-from ztharvester.config import TokenHarborConfig
-from ztharvester.tokenharbor import TokenHarborCreator, HarvestedKey
-from ztharvester.mail import Mailbox, Message
+from llmharvester.config import TokenHarborConfig
+from llmharvester.tokenharbor import TokenHarborCreator, HarvestedKey
+from llmharvester.mail import Mailbox, Message
 
 
 class MockCDP:

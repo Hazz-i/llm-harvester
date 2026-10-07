@@ -1,6 +1,6 @@
 import json
-from ztharvester.config import HarvesterConfig
-from ztharvester.engine import Ledger
+from llmharvester.config import HarvesterConfig
+from llmharvester.engine import Ledger
 
 
 def test_config_env(monkeypatch):
@@ -52,4 +52,18 @@ max_retries = 4
     assert cfg.tokenmix.referral_code == "ref123"
     assert cfg.tokenmix.wait_seconds == 90.0
     assert cfg.tokenmix.max_retries == 4
+
+
+def test_update_env_cdp_ws(tmp_path):
+    from llmharvester.browser import update_env_cdp_ws
+
+    env_file = tmp_path / ".env"
+    env_file.write_text("SOME_VAR=123\nLLM_CDP_WS=ws://old\nOTHER_VAR=456\n")
+
+    updated = update_env_cdp_ws("ws://new-guid", env_file)
+    assert updated is True
+    assert "LLM_CDP_WS=ws://new-guid" in env_file.read_text()
+    assert "SOME_VAR=123" in env_file.read_text()
+    assert "OTHER_VAR=456" in env_file.read_text()
+
 

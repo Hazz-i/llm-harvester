@@ -1,19 +1,10 @@
-"""llm-harvester: multi-platform AI / LLM account creator and token harvester."""
+"""Backward-compatibility shim redirecting to llmharvester."""
+import sys
+import llmharvester
 
-from .zerotwo import HarvestedSession, ZeroTwoCreator
-from .router9 import NineRouterClient
-from .engine import Harvester
-from .config import HarvesterConfig
-from .proxy import Proxy, ProxyPool
+# Re-export all attributes from llmharvester
+for _attr in dir(llmharvester):
+    if not _attr.startswith("__"):
+        globals()[_attr] = getattr(llmharvester, _attr)
 
-__all__ = [
-    "HarvestedSession",
-    "ZeroTwoCreator",
-    "NineRouterClient",
-    "Harvester",
-    "HarvesterConfig",
-    "Proxy",
-    "ProxyPool",
-]
-
-__version__ = "1.0.0"
+sys.modules[__name__] = llmharvester

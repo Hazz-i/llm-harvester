@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import AsyncMock, patch
-from ztharvester.catalog import (
+from llmharvester.catalog import (
     get_default_models,
     fetch_provider_models,
     TOKENHARBOR_MODELS,

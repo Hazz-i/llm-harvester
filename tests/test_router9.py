@@ -1,6 +1,6 @@
 import httpx
 import pytest
-from ztharvester.router9 import NineRouterClient
+from llmharvester.router9 import NineRouterClient
 
 
 @pytest.mark.asyncio

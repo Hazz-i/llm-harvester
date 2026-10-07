@@ -173,24 +173,54 @@ class TokenHarborCreator:
             await self.cdp.navigate(self.SIGNUP_URL, wait_ms=10000)
             await self._sleep(3000)
 
+        # Check if Turnstile challenge is active before inputs render
+        has_turnstile = await self.cdp.evaluate(
+            "!!document.querySelector('input[name=\"cf-turnstile-response\"], [data-turnstile], iframe[src*=\"challenges\"]')"
+        )
+        if has_turnstile:
+            self.log("[tokenharbor] Turnstile challenge detected prior to form inputs, waiting for verification...")
+            await self._wait_for_turnstile(timeout_seconds=25.0)
+
         # Wait for Next.js to hydrate the form inputs
         self.log("[tokenharbor] Waiting for signup form hydration...")
         form_ready = False
-        for _ in range(15):
-            has_input = await self.cdp.evaluate("!!document.querySelector('input[type=\"email\"]')")
+        for _ in range(25):
+            has_input = await self.cdp.evaluate(
+                "!!document.querySelector('input[type=\"email\"], input[name=\"email\"], #email, input[autocomplete*=\"email\" i], input[placeholder*=\"email\" i]')"
+            )
             if has_input:
                 form_ready = True
                 break
+            # Pastikan tab Sign up aktif jika ada switcher
+            await self.cdp.evaluate("""(()=>{
+                const btns = Array.from(document.querySelectorAll('button, a, [role="tab"]'));
+                const signupBtn = btns.find(b => {
+                    const txt = (b.innerText || b.textContent || '').trim().toLowerCase();
+                    return txt === 'sign up' || txt === 'register' || txt === 'create account';
+                });
+                if (signupBtn && signupBtn.getAttribute('aria-selected') !== 'true') {
+                    signupBtn.click();
+                }
+            })()""")
             await self._sleep(1000)
 
         if not form_ready:
-            raise RuntimeError("Signup form failed to render email input")
+            page_info = await self.cdp.evaluate("""(()=>{
+                return {
+                    url: window.location.href,
+                    title: document.title,
+                    inputs: Array.from(document.querySelectorAll('input')).map(i => ({type: i.type, name: i.name, id: i.id, placeholder: i.placeholder})),
+                    buttons: Array.from(document.querySelectorAll('button')).map(b => (b.innerText || b.textContent || '').trim()).slice(0, 5)
+                };
+            })()""")
+            self.log(f"[tokenharbor] Form hydration failed. Page state: {page_info}")
+            raise RuntimeError(f"Signup form failed to render email input (URL: {page_info.get('url') if isinstance(page_info, dict) else 'unknown'})")
 
         # 2. Fill email and password helper
         async def _fill_credentials():
             await self.cdp.evaluate(
                 """(()=>{
-                    const em = document.querySelector('input[type="email"]') || document.querySelector('#email') || document.querySelector('input[name="email"]');
+                    const em = document.querySelector('input[type="email"]') || document.querySelector('#email') || document.querySelector('input[name="email"]') || document.querySelector('input[autocomplete*="email" i]') || document.querySelector('input[placeholder*="email" i]');
                     if (em) {
                         const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
                         setter.call(em, %s);
@@ -258,7 +288,9 @@ class TokenHarborCreator:
             if err_msg:
                 self.log(f"[tokenharbor] Notice during signup: {err_msg}")
                 err_lower = str(err_msg).lower()
-                if "bot check" in err_lower or "snapped" in err_lower or "refresh" in err_lower:
+                if "too many sign-ups" in err_lower or "too many signups" in err_lower:
+                    raise RuntimeError(f"Rate limited by Token Harbor: {err_msg}. Use proxy pool to rotate IP.")
+                elif "bot check" in err_lower or "snapped" in err_lower or "refresh" in err_lower:
                     self.log("[tokenharbor] Refreshing signup page after bot check notice...")
                     await self.cdp.navigate(self.SIGNUP_URL, wait_ms=10000)
                     await self._sleep(3000)

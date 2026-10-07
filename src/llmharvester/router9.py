@@ -12,7 +12,7 @@ connections and are available through the single 9Router endpoint.
 * ``GET  /v1/models``                   OpenAI-compatible model list
 
 ZeroTwo does not speak the OpenAI protocol itself, so the connector ships with
-an optional built-in shim (:mod:`ztharvester.shim`) and registers ZeroTwo via
+an optional built-in shim (:mod:`llmharvester.shim`) and registers ZeroTwo via
 that shim by default. If you already run an external ZeroTwo->OpenAI proxy,
 point ``--shim-base-url`` at it instead.
 """

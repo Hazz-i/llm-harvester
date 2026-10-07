@@ -90,9 +90,29 @@ class MailProvider:
             raise RuntimeError("MailProvider must be used as an async context manager")
         return self._client
 
+    async def _fallback_direct(self) -> None:
+        if self.proxy and self._client is not None:
+            self.proxy = None
+            try:
+                await self._client.aclose()
+            except Exception:
+                pass
+            self._client = httpx.AsyncClient(timeout=self.timeout)
+
     async def domains(self) -> list[str]:
-        r = await self.client.get(f"{self.base_url}/domains")
-        r.raise_for_status()
+        try:
+            r = await self.client.get(f"{self.base_url}/domains")
+            if r.status_code in (402, 407) and self.proxy:
+                await self._fallback_direct()
+                r = await self.client.get(f"{self.base_url}/domains")
+            r.raise_for_status()
+        except (httpx.ProxyError, httpx.ConnectError, httpx.HTTPStatusError):
+            if self.proxy:
+                await self._fallback_direct()
+                r = await self.client.get(f"{self.base_url}/domains")
+                r.raise_for_status()
+            else:
+                raise
         data = r.json()
         members = data.get("hydra:member", data if isinstance(data, list) else [])
         return [m["domain"] for m in members if m.get("isActive", True)]
@@ -108,10 +128,26 @@ class MailProvider:
             username = _rand_username(prefix)
             address = f"{username}@{domain}"
             password = _rand_password()
-            r = await self.client.post(
-                f"{self.base_url}/accounts",
-                json={"address": address, "password": password},
-            )
+            try:
+                r = await self.client.post(
+                    f"{self.base_url}/accounts",
+                    json={"address": address, "password": password},
+                )
+            except (httpx.ProxyError, httpx.ConnectError):
+                if self.proxy:
+                    await self._fallback_direct()
+                    r = await self.client.post(
+                        f"{self.base_url}/accounts",
+                        json={"address": address, "password": password},
+                    )
+                else:
+                    raise
+            if r.status_code in (402, 407) and self.proxy:
+                await self._fallback_direct()
+                r = await self.client.post(
+                    f"{self.base_url}/accounts",
+                    json={"address": address, "password": password},
+                )
             if r.status_code == 429:
                 last_error = "429 rate limited"
                 await asyncio.sleep(5 * (attempt + 1))

@@ -1,4 +1,4 @@
-from ztharvester.cli import _resolve_target
+from llmharvester.cli import _resolve_target
 
 
 def test_resolve_target_explicit():

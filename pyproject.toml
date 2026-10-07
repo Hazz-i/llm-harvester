@@ -34,8 +34,9 @@ shim = ["uvicorn>=0.30.0"]
 dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.5"]
 
 [project.scripts]
-llm-harvester = "ztharvester.cli:_entry"
-zt-harvester = "ztharvester.cli:_entry"
+llm-harvester = "llmharvester.cli:_entry"
+llm-harvest = "llmharvester.cli:_entry"
+zt-harvester = "llmharvester.cli:_entry"
 
 [project.urls]
 Homepage = "https://github.com/Hazz-i/llm-harvester"

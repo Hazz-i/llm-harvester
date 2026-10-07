@@ -57,13 +57,29 @@ class Proxy:
             scheme, _, rest = line.partition("://")
         else:
             rest = line
+        if "@" in rest:
+            user_auth, _, host_port = rest.rpartition("@")
+            user, _, pwd = user_auth.partition(":")
+            if ":" in host_port:
+                host, _, port = host_port.partition(":")
+                try:
+                    return cls(host=host, port=int(port), username=user, password=pwd, scheme=scheme)
+                except ValueError:
+                    return None
+            return None
         parts = rest.split(":")
         if len(parts) == 2:
             host, port = parts
-            return cls(host=host, port=int(port), scheme=scheme)
+            try:
+                return cls(host=host, port=int(port), scheme=scheme)
+            except ValueError:
+                return None
         if len(parts) >= 4:
             host, port, user, pwd = parts[0], parts[1], parts[2], ":".join(parts[3:])
-            return cls(host=host, port=int(port), username=user, password=pwd, scheme=scheme)
+            try:
+                return cls(host=host, port=int(port), username=user, password=pwd, scheme=scheme)
+            except ValueError:
+                return None
         return None
 
 
@@ -126,4 +142,17 @@ class ProxyPool:
                 pool.add(line)
         scheme = os.getenv("LLM_PROXY_SCHEME") or os.getenv("ZT_PROXY_SCHEME", "http")
         pool.scheme = scheme
+        # Auto-discover proxy files when no proxies loaded from env vars
+        if not pool.proxies:
+            for fallback in [
+                "proxies.txt",
+                "output/webshare_residential.txt",
+                "output/live_elite.txt",
+            ]:
+                fp = Path(fallback)
+                if fp.exists() and fp.stat().st_size > 0:
+                    for line in fp.read_text().splitlines():
+                        pool.add(line)
+                    if pool.proxies:
+                        break
         return pool

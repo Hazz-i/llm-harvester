@@ -11,7 +11,7 @@ Three adapters are provided:
 * ``HttpCDP``   - talks to a Browser Use cloud browser bootstrap endpoint.
 
 All adapters implement the same tiny surface used by
-:class:`~ztharvester.zerotwo.ZeroTwoCreator`.
+:class:`~llmharvester.zerotwo.ZeroTwoCreator`.
 """
 
 from __future__ import annotations
