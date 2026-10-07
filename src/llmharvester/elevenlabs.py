@@ -328,22 +328,28 @@ class ElevenLabsCreator:
                 })()""")
                 await self._sleep(150)
 
-            # Step 2: Check 18+ age agreement checkbox if present
-            await self.cdp.evaluate(r"""(()=>{
-                const cbs = document.querySelectorAll('button[role="checkbox"], input[type="checkbox"], [role="checkbox"]');
-                cbs.forEach(cb => {
-                    if (cb.getAttribute('aria-checked') === 'false' || cb.checked === false) {
-                        cb.click();
+            # Step 2: Check 18+ age agreement checkbox if present and not already checked
+            cb_checked = await self.cdp.evaluate(r"""(()=>{
+                const cbBtn = document.querySelector('button[role="checkbox"]');
+                if (cbBtn) {
+                    if (cbBtn.getAttribute('aria-checked') === 'false') {
+                        cbBtn.click();
+                        return true;
                     }
-                });
-                const allEls = Array.from(document.querySelectorAll('*'));
-                const label = allEls.find(el => el.innerText && (el.innerText.includes('18 years old') || el.innerText.includes('By checking this box')) && el.children.length === 0);
-                if (label) {
-                    label.click();
-                    if (label.parentElement) label.parentElement.click();
+                    return false;
                 }
+                const cbInp = document.querySelector('input[name="adult"], input[type="checkbox"]');
+                if (cbInp && !cbInp.checked) {
+                    const label = cbInp.closest('label');
+                    if (label) label.click();
+                    else cbInp.click();
+                    return true;
+                }
+                return false;
             })()""")
-            await self._sleep(150)
+            if cb_checked:
+                self.log("[elevenlabs] Checked 18+ age agreement checkbox.")
+                await self._sleep(400)
 
             # Step 3: Fill name if an empty text input exists
             await self.cdp.evaluate(r"""(()=>{
@@ -786,6 +792,19 @@ class ElevenLabsCreator:
                     if (btns.length > 0) btns[btns.length - 1].click();
                 })()""")
                 await self._sleep(1500)
+
+                # Confirm prompt if secondary dialog appears ("No Permissions Selected")
+                await self.cdp.evaluate(r"""(()=>{
+                    const dialogs = Array.from(document.querySelectorAll('div[role="dialog"], [role="alertdialog"]'));
+                    for (const d of dialogs) {
+                        const t = (d.innerText || '').toLowerCase();
+                        if (t.includes('no permissions') || t.includes('are you sure')) {
+                            const btns = Array.from(d.querySelectorAll('button')).filter(b => (b.innerText || '').trim().toLowerCase() === 'create key');
+                            if (btns.length > 0) btns[btns.length - 1].click();
+                        }
+                    }
+                })()""")
+                await self._sleep(1000)
 
                 # Poll newly created key
                 for _ in range(15):
