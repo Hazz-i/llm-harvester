@@ -17,6 +17,8 @@ from .cdp import BridgeCDP, HttpCDP, LocalCDP
 from .config import HarvesterConfig
 from .mail import MailProvider
 from .router9 import NineRouterClient
+from .tokenharbor import TokenHarborCreator
+from .tokenmix import TokenMixCreator
 from .zerotwo import HarvestedSession, ZeroTwoCreator
 
 
@@ -46,7 +48,7 @@ class Ledger:
 
     def summary(self) -> dict[str, Any]:
         total = len(self._records)
-        ok = sum(1 for r in self._records if r.get("access_token"))
+        ok = sum(1 for r in self._records if r.get("access_token") or r.get("api_key"))
         routed = sum(1 for r in self._records if r.get("router", {}).get("ok"))
         return {"total": total, "harvested": ok, "routed": routed}
 
@@ -55,7 +57,15 @@ class Harvester:
     def __init__(self, config: HarvesterConfig, log: Any = print) -> None:
         self.config = config
         self.log = log
-        self.ledger = Ledger(Path(config.output_dir) / "sessions.jsonl")
+        self.ledger = self._init_ledger(config.target)
+
+    def _init_ledger(self, target: str) -> Ledger:
+        ledger_name = "sessions.jsonl"
+        if target == "tokenharbor":
+            ledger_name = "tokenharbor_keys.jsonl"
+        elif target == "tokenmix":
+            ledger_name = "tokenmix_keys.jsonl"
+        return Ledger(Path(self.config.output_dir) / ledger_name)
 
     async def _make_cdp(self, proxy: str | None = None) -> Any:
         b = self.config.browser
@@ -92,6 +102,59 @@ class Harvester:
         proxy: str | None = None,
     ) -> dict[str, Any]:
         cfg = self.config
+
+        if cfg.target == "tokenharbor":
+            cdp = await self._make_cdp(proxy)
+            try:
+                creator = TokenHarborCreator(cdp, mail, config=cfg.tokenharbor, log=self.log)
+                res = await creator.create_account()
+                record = res.as_dict()
+                record["index"] = index
+                record["finished_at"] = time.time()
+                self.ledger.append(record)
+                return record
+            finally:
+                launcher = getattr(cdp, "_launcher", None)
+                if launcher and hasattr(launcher, "stop"):
+                    try:
+                        res = launcher.stop()
+                        if asyncio.iscoroutine(res):
+                            await res
+                    except Exception:  # noqa: BLE001
+                        pass
+                close = getattr(cdp, "close", None)
+                if close:
+                    try:
+                        await close()
+                    except Exception:  # noqa: BLE001
+                        pass
+
+        if cfg.target == "tokenmix":
+            cdp = await self._make_cdp(proxy)
+            try:
+                creator = TokenMixCreator(cdp, mail, config=cfg.tokenmix, log=self.log)
+                res = await creator.create_account()
+                record = res.as_dict()
+                record["index"] = index
+                record["finished_at"] = time.time()
+                self.ledger.append(record)
+                return record
+            finally:
+                launcher = getattr(cdp, "_launcher", None)
+                if launcher and hasattr(launcher, "stop"):
+                    try:
+                        res = launcher.stop()
+                        if asyncio.iscoroutine(res):
+                            await res
+                    except Exception:  # noqa: BLE001
+                        pass
+                close = getattr(cdp, "close", None)
+                if close:
+                    try:
+                        await close()
+                    except Exception:  # noqa: BLE001
+                        pass
+
         account: dict[str, Any] = {"index": index, "started_at": time.time()}
         mailbox = None
         session: HarvestedSession | None = None
@@ -159,15 +222,19 @@ class Harvester:
         self.ledger.append(record)
         return record
 
-    async def run(self, count: int) -> dict[str, Any]:
+    async def run(self, count: int, target: str | None = None) -> dict[str, Any]:
         cfg = self.config
+        if target and target != "select":
+            cfg.target = target
+            self.ledger = self._init_ledger(target)
+
         pool = cfg.build_proxy_pool()
         if pool:
             self.log(f"proxy pool: {len(pool)} exit IPs")
 
         router: NineRouterClient | None = None
         node_id: str | None = None
-        if cfg.router.enabled:
+        if cfg.router.enabled and cfg.target == "zerotwo":
             router = NineRouterClient(
                 cfg.router.base_url,
                 api_key=cfg.router.api_key,
