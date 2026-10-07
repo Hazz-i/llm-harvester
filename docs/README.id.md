@@ -33,59 +33,75 @@
 ## Arsitektur
 
 ```text
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                            Arsitektur zt-farming                            │
-└─────────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                       Arsitektur llm-harvester                                         │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 
-       [1] Create Mailbox                 [2] Drive Web Automation
-    ┌───────────────────────┐            ┌───────────────────────┐
-    │  mail.tm REST API     │            │  Chromium (CDP :9222) │
-    │  (Disposable Mailbox) │            │  (Bypass Turnstile)   │
-    └──────────┬────────────┘            └───────────┬───────────┘
-               │                                     │
-               │ Menerima Magic Link                 │ Otomasi Sign-up & Wizard
-               ▼                                     ▼
-    ┌────────────────────────────────────────────────────────────┐
-    │             Platform ZeroTwo (app.zerotwo.ai)              │
-    └──────────────────────────────┬─────────────────────────────┘
-                                   │
-                                   │ [3] Panen JWT, Cookie & CSRF
-                                   ▼
-    ┌────────────────────────────────────────────────────────────┐
-    │                   Harvester Engine (CLI)                   │
-    └──────────────┬───────────────────────────────┬─────────────┘
-                   │                               │
-        Menyimpan  │                     Daftarkan │ Node & Kredensial
-        ke Ledger  ▼                       via API ▼
-    ┌───────────────────────┐            ┌───────────────────────┐
-    │ harvest/              │◄───────────│ OpenAI Shim (:8787)   │
-    │ sessions.jsonl        │ Baca live  │ (Dynamic Auth & SSE)  │
-    └───────────────────────┘ sessions   └───────────▲───────────┘
-                                                     │
-                                            Proxy    │ Chat Completions
-                                            Request  │ (:20128 /v1)
-                                                     ▼
-                                         ┌───────────────────────┐
-                                         │ AI Gateway 9Router    │
-                                         └───────────────────────┘
+              [1] Pembuatan Email Sementara               [2] Otomasi Browser & Bypass Bot
+           ┌──────────────────────────────────────┐     ┌──────────────────────────────────────┐
+           │          REST API mail.tm            │     │       Chromium / Chrome (CDP :9222)  │
+           │  (Inbox Sekali Pakai, Link & OTP)    │     │      (Bypass Cloudflare Turnstile)   │
+           └──────────────────┬───────────────────┘     └──────────────────┬───────────────────┘
+                              │                                            │
+                              ▼                                            ▼
+           ┌───────────────────────────────────────────────────────────────────────────────────┐
+           │                             Harvester Engine CLI                                  │
+           │                      (Menu Interaktif atau Flag --target)                         │
+           └──────────────┬─────────────────────────┬──────────────────────────┬───────────────┘
+                          │                         │                          │
+        [Target: zerotwo] │     [Target: tokenharbor]│        [Target: tokenmix]│
+                          ▼                         ▼                          ▼
+               ┌───────────────────────┐ ┌───────────────────────┐ ┌───────────────────────┐
+               │    ZeroTwoCreator     │ │  TokenHarborCreator   │ │    TokenMixCreator    │
+               │   (app.zerotwo.ai)    │ │   (tokenharbor.ai)    │ │    (tokenmix.ai)      │
+               └──────────┬────────────┘ └──────────┬────────────┘ └───────────┬───────────┘
+                          │                         │                          │
+                          │ Panen Supabase JWT,     │ Panen API Key            │ Panen API Key
+                          │ Cookie & Token CSRF     │ (thk_live_...)           │ (sk-tm-...)
+                          ▼                         ▼                          ▼
+               ┌───────────────────────┐ ┌───────────────────────┐ ┌───────────────────────┐
+               │ harvest/              │ │ harvest/              │ │ harvest/              │
+               │ sessions.jsonl        │ │ tokenharbor_keys.jsonl│ │ tokenmix_keys.jsonl   │
+               └──────────┬────────────┘ └───────────────────────┘ └───────────────────────┘
+                          │
+             Input Sesi   │ Registrasi Otomatis Node,
+             Live         │ Model & Kredensial via API
+                          ▼
+               ┌───────────────────────┐
+               │ OpenAI Shim (:8787)   │
+               │ (Dynamic Auth & SSE)  │
+               └──────────▲────────────┘
+                          │ Meneruskan Chat Completions
+                          │ (:20128 /v1)
+                          ▼
+               ┌───────────────────────┐
+               │  AI Gateway 9Router   │
+               └───────────────────────┘
 ```
 
 ### Penjelasan Alur Arsitektur
 
-- **`create` (mail.tm mailbox)**:  
-  Harvester secara otomatis **membuat** kotak email sementara sekali pakai melalui REST API `mail.tm` (`POST /accounts`). Email ini digunakan saat mendaftar ZeroTwo untuk menerima *magic link* verifikasi pendaftaran dan mengecek inbox secara otomatis.
-- **`drive` (Chromium CDP)**:  
-  Karena antarmuka ZeroTwo dilindungi oleh Cloudflare Turnstile (anti-bot) dan memiliki tahap formulir wizard, permintaan HTTP biasa akan langsung diblokir (403/Turnstile). Harvester **"menyetir" / mengendalikan (drive)** browser Chromium/Chrome/Brave asli lewat protokol **Chrome DevTools Protocol (CDP)** (`:9222`) untuk:
-  1. Membuka web ZeroTwo (`app.zerotwo.ai`) dan mengetikkan email pendaftaran.
-  2. Mengarahkan browser membuka URL verifikasi *magic link* dari inbox email.
-  3. Menyelesaikan formulir onboarding (nama dan minat).
-  4. Menyadap dan mengekstrak token Supabase JWT (`access_token`, `refresh_token`), cookie (`cf_clearance`, `__csrf`), dan token CSRF langsung dari sesi browser aktif.
-- **Harvester**:  
-  Mengorkestrasi seluruh siklus panen, menyimpan akun ke `harvest/sessions.jsonl`, dan mendaftarkan provider node serta kredensial ke 9Router melalui API.
-- **OpenAI Shim (`:8787`)**:  
-  Menerjemahkan request standar OpenAI `/v1/chat/completions` ke protokol internal ZeroTwo, serta memperbarui token JWT secara otomatis jika mendekati waktu kedaluwarsa.
-- **9Router (`:20128`)**:  
-  Pintu gerbang terpadu untuk membagi beban chat completion ke seluruh akun yang tersedia melalui shim.
+1. **Email Sementara Sekali Pakai (`mail.tm`)**:  
+   Harvester secara otomatis membuat kotak email sementara sesuai kebutuhan via REST API `mail.tm` (`POST /accounts`). Email ini digunakan untuk menerima *magic link* verifikasi pendaftaran (ZeroTwo), link konfirmasi akun (Token Harbor), maupun kode OTP / link verifikasi (TokenMix) tanpa memerlukan tab browser webmail pihak ketiga.
+
+2. **Otomasi Browser via CDP (`:9222`)**:  
+   Mengendalikan browser asli (Chromium, Google Chrome, atau Brave) via protokol **Chrome DevTools Protocol (CDP)** pada port 9222. Mekanisme ini melewati tantangan anti-bot Cloudflare Turnstile secara alami, mengisi wizard pendaftaran, serta menyadap cookie sesi, local storage, dan token otentikasi.
+
+3. **Creator Multi-Platform**:  
+   - **`ZeroTwoCreator`**: Mendaftar di `app.zerotwo.ai`, membuka *magic link* dari email, menyelesaikan formulir wizard onboarding, lalu menyadap token Supabase JWT (`access_token`, `refresh_token`), cookie (`cf_clearance`, `__csrf`), dan token CSRF.
+   - **`TokenHarborCreator`**: Mendaftar di `tokenharbor.ai`, membuka tautan konfirmasi dari email `mail.tm`, login otomatis, masuk ke halaman manajemen API key dashboard, lalu membuat dan mengekstrak API key produksi (`thk_live_...`).
+   - **`TokenMixCreator`**: Mendaftar di `tokenmix.ai`, menyelesaikan verifikasi Turnstile via CDP, memverifikasi email lewat `mail.tm`, masuk ke dashboard API keys, lalu membuat dan mengekstrak API key (`sk-tm-...`).
+
+4. **Penyimpanan Ledger Terpisah**:  
+   Menyimpan seluruh kredensial hasil panen ke berkas ledger JSONL yang *append-only* dan *crash-safe*:
+   - `harvest/sessions.jsonl` (Sesi ZeroTwo)
+   - `harvest/tokenharbor_keys.jsonl` (API key Token Harbor)
+   - `harvest/tokenmix_keys.jsonl` (API key TokenMix)
+
+5. **OpenAI Shim (`:8787`) & Integrasi 9Router (`:20128`) (Khusus ZeroTwo)**:  
+   - **OpenAI Shim**: Menerjemahkan request standar OpenAI `/v1/chat/completions` ke protokol internal ZeroTwo serta otomatis merefresh token JWT yang hampir expired menggunakan *refresh token*.
+   - **9Router AI Gateway**: Mendaftarkan provider node baru secara otomatis, memetakan 160+ model AI yang didukung (`zerotwo/<model_id>`), dan membagi beban ke kumpulan akun yang dipanen.
+
 
 ## Instalasi
 

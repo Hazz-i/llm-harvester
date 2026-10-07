@@ -33,59 +33,75 @@
 ## Architecture
 
 ```text
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                            zt-farming Architecture                          │
-└─────────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                       llm-harvester Architecture                                       │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 
-       [1] Create Mailbox                 [2] Drive Web Automation
-    ┌───────────────────────┐            ┌───────────────────────┐
-    │  mail.tm REST API     │            │  Chromium (CDP :9222) │
-    │  (Disposable Mailbox) │            │  (Turnstile Bypass)   │
-    └──────────┬────────────┘            └───────────┬───────────┘
-               │                                     │
-               │ Receives Magic Link                 │ Automates Sign-up & Wizard
-               ▼                                     ▼
-    ┌────────────────────────────────────────────────────────────┐
-    │             ZeroTwo Platform (app.zerotwo.ai)              │
-    └──────────────────────────────┬─────────────────────────────┘
-                                   │
-                                   │ [3] Harvests JWT, Cookies & CSRF
-                                   ▼
-    ┌────────────────────────────────────────────────────────────┐
-    │                   Harvester Engine (CLI)                   │
-    └──────────────┬───────────────────────────────┬─────────────┘
-                   │                               │
-        Appends to │                    Registers  │ Node & Credentials
-        Ledger     ▼                    via API    ▼
-    ┌───────────────────────┐            ┌───────────────────────┐
-    │ harvest/              │◄───────────│ OpenAI Shim (:8787)   │
-    │ sessions.jsonl        │ Reads live │ (Dynamic Auth & SSE)  │
-    └───────────────────────┘ sessions   └───────────▲───────────┘
-                                                     │
-                                            Proxies  │ Chat Completions
-                                            Requests │ (:20128 /v1)
-                                                     ▼
-                                         ┌───────────────────────┐
-                                         │ 9Router AI Gateway    │
-                                         └───────────────────────┘
+              [1] Disposable Mailbox Provisioning          [2] Browser Automation & Bot Bypass
+           ┌──────────────────────────────────────┐     ┌──────────────────────────────────────┐
+           │          mail.tm REST API            │     │       Chromium / Chrome (CDP :9222)  │
+           │    (Temp Email, Link & OTP Polling)  │     │     (Cloudflare Turnstile Bypass)    │
+           └──────────────────┬───────────────────┘     └──────────────────┬───────────────────┘
+                              │                                            │
+                              ▼                                            ▼
+           ┌───────────────────────────────────────────────────────────────────────────────────┐
+           │                              llm-harvester CLI Engine                             │
+           │                      (Interactive Selector or --target Flag)                      │
+           └──────────────┬─────────────────────────┬──────────────────────────┬───────────────┘
+                          │                         │                          │
+        [Target: zerotwo] │     [Target: tokenharbor]│        [Target: tokenmix]│
+                          ▼                         ▼                          ▼
+               ┌───────────────────────┐ ┌───────────────────────┐ ┌───────────────────────┐
+               │    ZeroTwoCreator     │ │  TokenHarborCreator   │ │    TokenMixCreator    │
+               │   (app.zerotwo.ai)    │ │   (tokenharbor.ai)    │ │    (tokenmix.ai)      │
+               └──────────┬────────────┘ └──────────┬────────────┘ └───────────┬───────────┘
+                          │                         │                          │
+                          │ Harvests Supabase JWT,  │ Harvests API Key         │ Harvests API Key
+                          │ Cookies & CSRF Token    │ (thk_live_...)           │ (sk-tm-...)
+                          ▼                         ▼                          ▼
+               ┌───────────────────────┐ ┌───────────────────────┐ ┌───────────────────────┐
+               │ harvest/              │ │ harvest/              │ │ harvest/              │
+               │ sessions.jsonl        │ │ tokenharbor_keys.jsonl│ │ tokenmix_keys.jsonl   │
+               └──────────┬────────────┘ └───────────────────────┘ └───────────────────────┘
+                          │
+             Feeds Live   │ Auto-registers Node,
+             Credentials  │ Models & Keys via API
+                          ▼
+               ┌───────────────────────┐
+               │ OpenAI Shim (:8787)   │
+               │ (Dynamic Auth & SSE)  │
+               └──────────▲────────────┘
+                          │ Proxies Chat Completions
+                          │ (:20128 /v1)
+                          ▼
+               ┌───────────────────────┐
+               │  9Router AI Gateway   │
+               └───────────────────────┘
 ```
 
 ### Architecture Flow Explained
 
-- **`create` (mail.tm mailbox)**:  
-  Harvester automatically creates a fresh, temporary disposable mailbox via the `mail.tm` REST API (e.g., `POST /accounts`). This mailbox is used to receive the ZeroTwo sign-up verification magic link and poll for incoming confirmation emails.
-- **`drive` (Chromium CDP)**:  
-  Because ZeroTwo enforces Cloudflare Turnstile anti-bot checks and frontend wizard flows, standard HTTP requests alone will get blocked. Harvester **drives** (automates) a real Chromium / Chrome / Brave browser session via the **Chrome DevTools Protocol (CDP)** (`:9222`) to:
-  1. Open the ZeroTwo web app (`app.zerotwo.ai`) and submit the email.
-  2. Navigate to the verification link received from `mail.tm`.
-  3. Walk through the onboarding wizard (name, interests).
-  4. Intercept and extract the Supabase JWT tokens (`access_token`, `refresh_token`), cookies (`cf_clearance`, `__csrf`), and CSRF token directly from the authenticated browser session.
-- **Harvester**:  
-  Orchestrates the entire cycle, saves credentials to `harvest/sessions.jsonl`, and registers provider nodes, models, and credentials into 9Router via API.
-- **OpenAI Shim (`:8787`)**:  
-  Translates standard OpenAI `/v1/chat/completions` calls into ZeroTwo's internal protocol, dynamically refreshing expired tokens and attaching valid cookies.
-- **9Router (`:20128`)**:  
-  Unified gateway distributing chat requests to the shim across all pooled accounts.
+1. **Disposable Mailbox (`mail.tm`)**:
+   Automatically provisions disposable mailboxes on-demand via the `mail.tm` REST API (`POST /accounts`). It polls incoming messages to extract verification magic links (ZeroTwo), account confirmation links (Token Harbor), or OTP verification codes (TokenMix) without needing third-party webmail browser tabs.
+
+2. **Browser Automation via CDP (`:9222`)**:
+   Controls a real Chromium, Google Chrome, or Brave Browser session via the **Chrome DevTools Protocol (CDP)** (`:9222`). This bypasses Cloudflare Turnstile anti-bot challenges natively, handles dynamic form wizards, and enables live extraction of cookies, local storage, and authentication tokens.
+
+3. **Multi-Target Creators**:
+   - **`ZeroTwoCreator`**: Automates sign-up at `app.zerotwo.ai`, follows the email magic link, completes the onboarding wizard, and intercepts Supabase JWT tokens (`access_token`, `refresh_token`), session cookies (`cf_clearance`, `__csrf`), and CSRF tokens.
+   - **`TokenHarborCreator`**: Automates registration at `tokenharbor.ai`, verifies the account via the confirmation URL received from `mail.tm`, logs in, navigates to the API keys management page, and creates/extracts a production API key (`thk_live_...`).
+   - **`TokenMixCreator`**: Automates registration at `tokenmix.ai`, solves Cloudflare Turnstile via CDP, verifies email via `mail.tm`, navigates to dashboard API keys, and creates/extracts an API key (`sk-tm-...`).
+
+4. **Dedicated Ledgers**:
+   Stores harvested credentials in append-only, crash-safe JSONL ledger files:
+   - `harvest/sessions.jsonl` (ZeroTwo sessions)
+   - `harvest/tokenharbor_keys.jsonl` (Token Harbor API keys)
+   - `harvest/tokenmix_keys.jsonl` (TokenMix API keys)
+
+5. **ZeroTwo OpenAI Shim (`:8787`) & 9Router Integration (`:20128`)**:
+   - **OpenAI Shim**: Translates standard OpenAI `/v1/chat/completions` requests to ZeroTwo's internal protocol and automatically refreshes expired Supabase JWTs.
+   - **9Router AI Gateway**: Automatically registers provider nodes, maps all 160+ ZeroTwo models (`zerotwo/<model_id>`), and distributes requests across pooled accounts.
+
 
 ## Install
 
