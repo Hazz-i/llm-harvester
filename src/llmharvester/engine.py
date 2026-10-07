@@ -267,7 +267,7 @@ class Harvester:
                             "node_name": cfg.elevenlabs.node_name,
                             "display_name": "ElevenLabs",
                             "account_type": "elevenlabs",
-                            "api_type": "tts",
+                            "api_type": "chat",
                         },
                     )
                     record["router"] = asdict(r_res)
@@ -402,7 +402,7 @@ class Harvester:
                         name=cfg.elevenlabs.node_name,
                         base_url=cfg.elevenlabs.api_base,
                         prefix=cfg.elevenlabs.node_prefix,
-                        api_type="tts",
+                        api_type="chat",
                     )
                     if node_id:
                         await router.sync_custom_models(node_id, get_default_models("elevenlabs"))

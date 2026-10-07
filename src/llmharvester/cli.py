@@ -344,15 +344,27 @@ if typer is not None:
                     total_synced += count
 
                 elif t in ("elevenlabs", "el"):
-                    keys = _read_records(Path(cfg.output_dir) / "elevenlabs_keys.jsonl")
+                    keys = [k for k in _read_records(Path(cfg.output_dir) / "elevenlabs_keys.jsonl") if k.get("api_key")]
                     if not keys:
-                        _log(f"[router] No ElevenLabs keys found in {cfg.output_dir}/elevenlabs_keys.jsonl")
+                        txt_path = Path(cfg.output_dir) / "elevenlabs_keys.txt"
+                        if txt_path.exists():
+                            for line in txt_path.read_text().splitlines():
+                                line = line.strip()
+                                if not line:
+                                    continue
+                                parts = line.split(":")
+                                if len(parts) >= 3:
+                                    keys.append({"email": parts[0], "password": parts[1], "api_key": parts[2]})
+                                elif len(parts) == 1:
+                                    keys.append({"email": f"el_{parts[0][:8]}@harvested.local", "api_key": parts[0]})
+                    if not keys:
+                        _log(f"[router] No valid ElevenLabs keys found in {cfg.output_dir}/elevenlabs_keys.jsonl or .txt")
                         continue
                     node_id = await client.ensure_node(
                         name=cfg.elevenlabs.node_name,
                         base_url=cfg.elevenlabs.api_base,
                         prefix=cfg.elevenlabs.node_prefix,
-                        api_type="tts",
+                        api_type="chat",
                     )
                     if node_id:
                         await client.sync_custom_models(node_id, get_default_models("elevenlabs"))
@@ -365,7 +377,7 @@ if typer is not None:
                             "node_name": cfg.elevenlabs.node_name,
                             "display_name": "ElevenLabs",
                             "account_type": "elevenlabs",
-                            "api_type": "tts",
+                            "api_type": "chat",
                         },
                     )
                     _log(f"[router] ElevenLabs: synced {count} key(s) (node={node_id})")

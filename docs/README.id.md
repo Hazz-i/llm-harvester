@@ -424,12 +424,13 @@ pm2 logs zt-shim
 | Perintah | Fungsi |
 | --- | --- |
 | `./main.py` | Buka Dashboard Interaktif TUI (Diagnosis sistem, 1-klik panen, WARP & proxy) |
-| `llm-harvester run` | Menu interaktif untuk memilih target (ZeroTwo, Token Harbor, TokenMix, Grok xAI) |
+| `llm-harvester run` | Menu interaktif untuk memilih target (ZeroTwo, Token Harbor, TokenMix, ElevenLabs, Grok xAI) |
 | `llm-harvester run -t tokenharbor --direct` | Panen Token Harbor via Direct Connection (ISP asli tanpa proxy, default) |
 | `llm-harvester run -t tokenharbor --warp` | Panen Token Harbor dengan traffic dialihkan lewat Cloudflare WARP (:10808) |
 | `llm-harvester run -t tokenharbor --proxy-file proxies.txt` | Panen Token Harbor dengan rotasi pool proxy |
 | `llm-harvester run -t tokenharbor -n 5` | Panen 5 akun Token Harbor & push API key + model ke 9Router |
 | `llm-harvester run -t tokenmix -n 3` | Panen 3 akun TokenMix & push API key + model ke 9Router |
+| `llm-harvester run -t elevenlabs -n 2` | Panen 2 akun ElevenLabs (10k kuota gratis) & push API key + model TTS ke 9Router |
 | `llm-harvester run -t zerotwo -n 2` | Panen 2 akun ZeroTwo & hubungkan ke 9Router via shim |
 | `llm-harvester run -t zerotwo -n 5 -s user@vps:...` | Panen ZeroTwo dan otomatis upload ledger via SCP ke VPS remote |
 | `llm-harvester warp status` | Cek status daemon proxy Cloudflare WARP lokal (:10808) |
@@ -438,6 +439,7 @@ pm2 logs zt-shim
 | `llm-harvester warp register` | Daftarkan profil WireGuard Cloudflare WARP baru via API REST resmi |
 | `llm-harvester shim -p 8787` | Jalankan shim ZeroTwo kompatibel OpenAI |
 | `llm-harvester sync --target all` | Sinkronisasi seluruh sesi & API key aktif langsung ke 9Router |
+| `llm-harvester sync --target elevenlabs` | Sinkronisasi API key ElevenLabs aktif langsung ke 9Router |
 | `llm-harvester proxies --check` | Daftar & uji pool proxy |
 | `llm-harvester export -f csv` | Ekspor ledger panen |
 

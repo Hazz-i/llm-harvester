@@ -58,11 +58,11 @@ TOKENMIX_MODELS: list[dict[str, Any]] = [
 
 # ElevenLabs audio & voice models (native endpoint: https://api.elevenlabs.io/v1)
 ELEVENLABS_MODELS: list[dict[str, Any]] = [
-    {"id": "eleven_multilingual_v2", "name": "Eleven Multilingual v2", "provider": "elevenlabs", "type": "tts"},
-    {"id": "eleven_turbo_v2_5", "name": "Eleven Turbo v2.5", "provider": "elevenlabs", "type": "tts"},
-    {"id": "eleven_flash_v2_5", "name": "Eleven Flash v2.5", "provider": "elevenlabs", "type": "tts"},
-    {"id": "eleven_multilingual_v1", "name": "Eleven Multilingual v1", "provider": "elevenlabs", "type": "tts"},
-    {"id": "eleven_monolingual_v1", "name": "Eleven Monolingual v1", "provider": "elevenlabs", "type": "tts"},
+    {"id": "eleven_multilingual_v2", "name": "Eleven Multilingual v2", "provider": "elevenlabs", "type": "llm"},
+    {"id": "eleven_turbo_v2_5", "name": "Eleven Turbo v2.5", "provider": "elevenlabs", "type": "llm"},
+    {"id": "eleven_flash_v2_5", "name": "Eleven Flash v2.5", "provider": "elevenlabs", "type": "llm"},
+    {"id": "eleven_multilingual_v1", "name": "Eleven Multilingual v1", "provider": "elevenlabs", "type": "llm"},
+    {"id": "eleven_monolingual_v1", "name": "Eleven Monolingual v1", "provider": "elevenlabs", "type": "llm"},
 ]
 
 

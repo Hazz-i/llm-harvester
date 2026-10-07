@@ -248,28 +248,45 @@ class ElevenLabsCreator:
     async def _scrape_key_from_page(self) -> str:
         """Scrapes API key from DOM (inputs, code blocks, or data attributes)."""
         res = await self.cdp.evaluate(r"""(()=>{
+            const isKey = (s) => {
+                if (!s || typeof s !== 'string') return false;
+                s = s.trim();
+                if (/^[a-f0-9]{32}$/i.test(s)) return true;
+                if (/^(?:sk_|xi_)[a-zA-Z0-9_\-]{28,100}$/i.test(s)) return true;
+                if (/^[a-zA-Z0-9]{32,64}$/.test(s) && !s.includes(' ')) return true;
+                return false;
+            };
+
             // 1. Input/textarea with value matching key pattern
             const inputs = Array.from(document.querySelectorAll('input, textarea'));
-            const ki = inputs.find(i => i.value && (
-                i.value.startsWith('sk_') || i.value.startsWith('xi_') ||
-                (i.value.length >= 32 && /^[a-zA-Z0-9_\-]+$/.test(i.value))
-            ));
-            if (ki) return ki.value.trim();
+            for (const i of inputs) {
+                const val = (i.value || '').trim();
+                if (isKey(val)) return val;
+            }
 
-            // 2. Text in code/pre/p/span matching key structure
-            const all = Array.from(document.querySelectorAll('code, pre, p, span, div, td, li'));
-            for (const el of all) {
-                const t = el.innerText ? el.innerText.trim() : '';
-                if (t && (t.startsWith('sk_') || t.startsWith('xi_')) && t.length >= 32 && t.length < 150) {
-                    return t.split(/\s/)[0].trim();
+            // 2. data-* attributes holding keys
+            const attrSelectors = ['[data-key]', '[data-api-key]', '[data-value]', '[data-clipboard-text]'];
+            const attrEls = Array.from(document.querySelectorAll(attrSelectors.join(',')));
+            for (const el of attrEls) {
+                for (const attr of ['key', 'apiKey', 'value', 'clipboardText']) {
+                    const v = (el.dataset[attr] || el.getAttribute('data-' + attr) || '').trim();
+                    if (isKey(v)) return v;
                 }
             }
 
-            // 3. data-* attributes holding keys
-            const dataEls = Array.from(document.querySelectorAll('[data-key], [data-api-key], [data-value]'));
-            for (const el of dataEls) {
-                const v = el.dataset.key || el.dataset.apiKey || el.dataset.value || '';
-                if (v && v.length >= 32) return v.trim();
+            // 3. Text in code/pre/p/span/div/td/li matching key structure
+            const all = Array.from(document.querySelectorAll('code, pre, p, span, div, td, li'));
+            for (const el of all) {
+                const t = el.innerText ? el.innerText.trim() : '';
+                if (!t || t.length < 32 || t.length > 300) continue;
+                if (isKey(t)) return t;
+                const m = t.match(/\b([a-f0-9]{32}|(?:sk_|xi_)[a-zA-Z0-9_\-]{28,100})\b/i);
+                if (m && isKey(m[1])) return m[1];
+            }
+
+            // 4. Check window.__lastCopied if set by copy button
+            if (window.__lastCopied && isKey(window.__lastCopied)) {
+                return window.__lastCopied.trim();
             }
 
             return '';
@@ -585,15 +602,33 @@ class ElevenLabsCreator:
         await self._sleep(1000)
 
         # 11. Scrape existing or create new API Key
+        # Setup copy event listener on the page to intercept any clipboard actions
+        try:
+            await self.cdp.evaluate("""(()=>{
+                if (!window.__copyListenerAttached) {
+                    window.__copyListenerAttached = true;
+                    document.addEventListener('copy', (e) => {
+                        try {
+                            const text = (window.getSelection && window.getSelection().toString()) || '';
+                            if (text) window.__lastCopied = text;
+                        } catch(err){}
+                    }, true);
+                }
+            })()""")
+        except Exception:
+            pass
+
         api_key = await self._scrape_key_from_page()
         if api_key:
             self.log(f"[elevenlabs] Existing API Key detected on page: {api_key[:12]}...")
         else:
             self.log("[elevenlabs] Creating new API Key...")
-            create_btn_clicked = await self.cdp.evaluate("""(()=>{
-                const btn = [...document.querySelectorAll('button, a')].find(b => {
-                    const t = (b.innerText || '').trim().toLowerCase();
-                    return t === 'create key' || t === 'create api key' || t === 'add api key' || t === 'add key';
+            create_btn_clicked = await self.cdp.evaluate(r"""(()=>{
+                const btns = Array.from(document.querySelectorAll('button, a, [role="button"]'));
+                const btn = btns.find(b => {
+                    const t = (b.innerText || b.getAttribute('aria-label') || '').trim().toLowerCase();
+                    return /(?:create|add|new|generate)\s*(?:api)?\s*key/i.test(t) ||
+                           t === 'create key' || t === 'create api key' || t === '+ create key';
                 });
                 if (btn) {
                     btn.click();
@@ -605,12 +640,25 @@ class ElevenLabsCreator:
             if create_btn_clicked:
                 await self._sleep(1500)
 
-                # Set permissions to Access / Write
+                # Set key name in modal input if present
                 await self.cdp.evaluate("""(()=>{
-                    const btns = Array.from(document.querySelectorAll('button'));
+                    const dialog = document.querySelector('div[role="dialog"], [data-state="open"], [aria-modal="true"]');
+                    const scope = dialog || document;
+                    const nameInp = scope.querySelector('input[placeholder*="name" i], input[placeholder*="key" i], input[type="text"]:not([readonly])');
+                    if (nameInp && !nameInp.value) {
+                        nameInp.value = 'prod-harvest';
+                        nameInp.dispatchEvent(new Event('input', {bubbles: true}));
+                        nameInp.dispatchEvent(new Event('change', {bubbles: true}));
+                    }
+                })()""")
+                await self._sleep(300)
+
+                # Set permissions to Access / Write if present
+                await self.cdp.evaluate("""(()=>{
+                    const btns = Array.from(document.querySelectorAll('button, [role="radio"], label'));
                     btns.forEach(b => {
                         const t = (b.innerText || '').trim();
-                        if (t === 'Access' || t === 'Write') b.click();
+                        if (t === 'Access' || t === 'Write' || t === 'Full access') b.click();
                     });
                 })()""")
                 await self._sleep(300)
@@ -625,14 +673,29 @@ class ElevenLabsCreator:
                 # Submit modal
                 self.log("[elevenlabs] Submitting API Key creation modal...")
                 await self.cdp.evaluate("""(()=>{
-                    const btns = Array.from(document.querySelectorAll('button')).filter(b => (b.innerText || '').trim() === 'Create Key');
-                    if (btns.length > 1) btns[btns.length - 1].click();
-                    else if (btns.length === 1) btns[0].click();
+                    const dialog = document.querySelector('div[role="dialog"], [data-state="open"], [aria-modal="true"]');
+                    const scope = dialog || document;
+                    const btns = Array.from(scope.querySelectorAll('button')).filter(b => {
+                        const t = (b.innerText || '').trim().toLowerCase();
+                        return (/(?:create|save|generate|done|confirm)/i.test(t) || b.type === 'submit') && !b.disabled;
+                    });
+                    if (btns.length > 0) btns[btns.length - 1].click();
                 })()""")
                 await self._sleep(1500)
 
                 # Poll newly created key
                 for _ in range(15):
+                    # Try clicking copy button in modal if present
+                    await self.cdp.evaluate("""(()=>{
+                        const dialog = document.querySelector('div[role="dialog"], [data-state="open"], [aria-modal="true"]');
+                        const scope = dialog || document;
+                        const copyBtns = Array.from(scope.querySelectorAll('button, [role="button"]')).filter(b => {
+                            const t = (b.innerText || b.getAttribute('aria-label') || '').trim().toLowerCase();
+                            return t.includes('copy');
+                        });
+                        if (copyBtns.length > 0) copyBtns[0].click();
+                    })()""")
+
                     new_key = await self._scrape_key_from_page()
                     if new_key:
                         api_key = new_key

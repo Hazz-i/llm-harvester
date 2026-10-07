@@ -420,12 +420,13 @@ pm2 logs zt-shim
 | Command | Purpose |
 | --- | --- |
 | `./main.py` | Launch interactive TUI Dashboard (Readiness diagnostic, 1-click harvester, WARP & proxies) |
-| `llm-harvester run` | Interactive prompt to select target (ZeroTwo, Token Harbor, TokenMix, Grok xAI) |
+| `llm-harvester run` | Interactive prompt to select target (ZeroTwo, Token Harbor, TokenMix, ElevenLabs, Grok xAI) |
 | `llm-harvester run -t tokenharbor --direct` | Harvest Token Harbor using Direct Connection (clean local residential ISP, default) |
 | `llm-harvester run -t tokenharbor --warp` | Harvest Token Harbor routing traffic through Cloudflare WARP (:10808) |
 | `llm-harvester run -t tokenharbor --proxy-file proxies.txt` | Harvest Token Harbor routing through rotated proxy pool |
 | `llm-harvester run -t tokenharbor -n 5` | Harvest 5 Token Harbor accounts & push keys + models to 9Router |
 | `llm-harvester run -t tokenmix -n 3` | Harvest 3 TokenMix accounts & push keys + models to 9Router |
+| `llm-harvester run -t elevenlabs -n 2` | Harvest 2 ElevenLabs accounts (10k free chars) & push keys + models to 9Router |
 | `llm-harvester run -t zerotwo -n 2` | Harvest 2 ZeroTwo accounts & connect to 9Router via shim |
 | `llm-harvester run -t zerotwo -n 5 -s user@vps:...` | Harvest ZeroTwo accounts and auto-upload ledger via SCP to remote VPS |
 | `llm-harvester warp status` | Check status of local Cloudflare WARP proxy daemon (:10808) |
@@ -434,6 +435,7 @@ pm2 logs zt-shim
 | `llm-harvester warp register` | Register a fresh Cloudflare WARP WireGuard profile via official REST API |
 | `llm-harvester shim -p 8787` | Run the OpenAI-compatible ZeroTwo shim |
 | `llm-harvester sync --target all` | Synchronize all harvested accounts & API keys into 9Router |
+| `llm-harvester sync --target elevenlabs` | Synchronize harvested ElevenLabs keys into 9Router |
 | `llm-harvester proxies --check` | List, auto-discover, and test the proxy pool |
 | `llm-harvester export -f csv` | Export the harvest ledger |
 

@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import AsyncMock, patch
-from llmharvester.config import HarvesterConfig, TokenHarborConfig, TokenMixConfig
+from llmharvester.config import HarvesterConfig, TokenHarborConfig, TokenMixConfig, ElevenLabsConfig
 from llmharvester.engine import Harvester
 from llmharvester.router9 import NineRouterClient, RouterResult
 from llmharvester.tokenharbor import HarvestedKey
@@ -143,3 +143,52 @@ async def test_engine_pushes_tokenmix_to_router(tmp_path):
 
         assert fake_router.sync_custom_models.called
         assert fake_router.connect_session.called
+
+
+@pytest.mark.asyncio
+async def test_engine_pushes_elevenlabs_to_router(tmp_path):
+    cfg = HarvesterConfig(
+        target="elevenlabs",
+        output_dir=str(tmp_path),
+        elevenlabs=ElevenLabsConfig(key_name_prefix="test-el"),
+    )
+    cfg.router.enabled = True
+    harvester = Harvester(cfg)
+
+    fake_key = HarvestedKey(
+        platform="elevenlabs",
+        email="el@mail.tm",
+        password="Pass",
+        api_key="xi_live_router_test_1234567890123456",
+    )
+
+    fake_router = NineRouterClient("http://127.0.0.1:20128")
+    fake_router.health = AsyncMock(return_value=True)
+    fake_router.ensure_node = AsyncMock(return_value="node-el-789")
+    fake_router.sync_custom_models = AsyncMock(return_value=5)
+    fake_router.connect_session = AsyncMock(return_value=RouterResult(ok=True, connection_id="c3"))
+
+    with patch.object(harvester, "_make_cdp", new_callable=AsyncMock), \
+         patch("llmharvester.engine.ElevenLabsCreator") as MockCreator, \
+         patch("llmharvester.engine.MailProvider"), \
+         patch("llmharvester.engine.NineRouterClient", return_value=fake_router):
+
+        instance = MockCreator.return_value
+        instance.create_account = AsyncMock(return_value=fake_key)
+
+        summary = await harvester.run(count=1, target="elevenlabs")
+        assert summary["harvested"] == 1
+
+        rec = harvester.ledger.records[0]
+        assert rec["api_key"] == "xi_live_router_test_1234567890123456"
+        assert "router" in rec
+        assert rec["router"]["ok"] is True
+        assert "models" in rec
+        assert len(rec["models"]) > 0
+
+        assert fake_router.ensure_node.called
+        assert fake_router.ensure_node.call_args.kwargs.get("api_type") == "chat"
+        assert fake_router.sync_custom_models.called
+        assert fake_router.connect_session.called
+        assert fake_router.connect_session.call_args.kwargs.get("extra", {}).get("api_type") == "chat"
+
