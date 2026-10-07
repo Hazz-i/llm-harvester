@@ -3,14 +3,14 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "zt-harvester"
+name = "llm-harvester"
 version = "1.0.0"
-description = "Bulk ZeroTwo, Token Harbor & TokenMix account creator and 9Router session/token harvester"
+description = "Multi-platform AI / LLM account creator & token harvester (ZeroTwo, Token Harbor, TokenMix & 9Router)"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "Hazz-i" }]
-keywords = ["zerotwo", "tokenharbor", "tokenmix", "9router", "farming", "harvester", "automation", "openai-compatible", "cdp"]
+keywords = ["llm", "ai", "zerotwo", "tokenharbor", "tokenmix", "9router", "harvester", "automation", "openai-compatible", "cdp"]
 classifiers = [
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.10",
@@ -34,14 +34,15 @@ shim = ["uvicorn>=0.30.0"]
 dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.5"]
 
 [project.scripts]
+llm-harvester = "ztharvester.cli:_entry"
 zt-harvester = "ztharvester.cli:_entry"
 zt-farming = "ztharvester.cli:_entry"
 
 [project.urls]
-Homepage = "https://github.com/Hazz-i/zt-harvester"
-Repository = "https://github.com/Hazz-i/zt-harvester"
-Documentation = "https://github.com/Hazz-i/zt-harvester#readme"
-Issues = "https://github.com/Hazz-i/zt-harvester/issues"
+Homepage = "https://github.com/Hazz-i/llm-harvester"
+Repository = "https://github.com/Hazz-i/llm-harvester"
+Documentation = "https://github.com/Hazz-i/llm-harvester#readme"
+Issues = "https://github.com/Hazz-i/llm-harvester/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]

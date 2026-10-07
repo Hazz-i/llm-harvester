@@ -1,8 +1,8 @@
 <div align="center">
 
-# zt-harvester
+# llm-harvester
 
-**Multi-platform AI account creator & token harvester · ZeroTwo, Token Harbor & TokenMix · 9Router auto-connect**
+**Multi-platform AI / LLM account creator & token harvester · ZeroTwo, Token Harbor & TokenMix · 9Router auto-connect**
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![License](https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge)](LICENSE)
@@ -90,8 +90,8 @@
 ## Install
 
 ```bash
-git clone https://github.com/Hazz-i/zt-harvester.git
-cd zt-harvester
+git clone https://github.com/Hazz-i/llm-harvester.git
+cd llm-harvester
 pip install -e ".[shim]"
 ```
 
@@ -129,14 +129,14 @@ NINEROUTER_PASSWORD=your_dashboard_password
 ZT_SHIM_BASE_URL=http://localhost:8787/v1
 ```
 
-*(Note: `.env` or `config.toml` is automatically loaded by `zt-harvester`)*.
+*(Note: `.env` or `config.toml` is automatically loaded by `llm-harvester`)*.
 
 ### 3. Create & Harvest Accounts
 
 #### A. Interactive Selection (Prompt)
 Simply run without arguments to choose interactively:
 ```bash
-zt-harvester run
+llm-harvester run
 ```
 ```text
 ? Select farming target:
@@ -149,21 +149,23 @@ Choice [1-3] (default 1):
 #### B. Direct Target Flag
 ```bash
 # Farm 5 Token Harbor accounts (harvests thk_live_... keys into harvest/tokenharbor_keys.jsonl)
-zt-harvester run --target tokenharbor --count 5
+llm-harvester run --target tokenharbor --count 5
 
 # Farm 3 TokenMix accounts (harvests sk-tm-... keys into harvest/tokenmix_keys.jsonl)
-zt-harvester run --target tokenmix --count 3
+llm-harvester run --target tokenmix --count 3
 
 # Farm 2 ZeroTwo accounts (harvests sessions into harvest/sessions.jsonl & auto-wires to 9Router)
-zt-harvester run --target zerotwo --count 2
+llm-harvester run --target zerotwo --count 2
 ```
+
+*(Note: `zt-harvester` and `zt-farming` aliases are also available).*
 
 ### 4. Run the OpenAI-compatible shim & connect to 9Router (ZeroTwo only)
 
 Start the local shim (automatically loads latest cookies & CSRF token from `harvest/sessions.jsonl`):
 
 ```bash
-zt-harvester shim --port 8787
+llm-harvester shim --port 8787
 ```
 
 ---

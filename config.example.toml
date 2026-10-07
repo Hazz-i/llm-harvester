@@ -1,4 +1,4 @@
-# zt-farming configuration
+# llm-harvester configuration
 target = "select"  # select (prompt interactive) | zerotwo | tokenharbor | tokenmix
 concurrency = 1
 output_dir = "harvest"

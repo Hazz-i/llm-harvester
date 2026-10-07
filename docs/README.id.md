@@ -1,6 +1,6 @@
 <div align="center">
 
-# zt-harvester
+# llm-harvester
 
 **Pembuat akun AI multi-platform & token harvester · ZeroTwo, Token Harbor & TokenMix · koneksi otomatis 9Router**
 
@@ -90,8 +90,8 @@
 ## Instalasi
 
 ```bash
-git clone https://github.com/Hazz-i/zt-farming.git
-cd zt-farming
+git clone https://github.com/Hazz-i/llm-harvester.git
+cd llm-harvester
 pip install -e ".[shim]"
 ```
 
@@ -111,7 +111,7 @@ google-chrome --remote-debugging-port=9222 --user-data-dir=./chrome-data
 
 Dapatkan URL WebSocket debugger lewat: `curl -s http://127.0.0.1:9222/json/version`.
 
-### 2. Konfigurasi `.env`
+### 2. Konfigurasi `.env` atau `config.toml`
 
 Salin `.env.example` ke `.env`:
 
@@ -129,25 +129,43 @@ NINEROUTER_PASSWORD=password_dashboard_anda
 ZT_SHIM_BASE_URL=http://localhost:8787/v1
 ```
 
-*(Catatan: File `.env` otomatis dimuat oleh `zt-farming`)*.
+*(Catatan: File `.env` atau `config.toml` otomatis dimuat oleh `llm-harvester`)*.
 
-### 3. Buat, panen, dan daftarkan akun
+### 3. Buat dan Panen Akun
 
+#### A. Menu Interaktif (Prompt)
+Jalankan tanpa opsi untuk memilih platform secara interaktif:
 ```bash
-zt-farming run --count 1
+llm-harvester run
+```
+```text
+? Select farming target:
+  [1] ZeroTwo      (app.zerotwo.ai)    -> JWT Session, Cookies, 9Router
+  [2] Token Harbor (tokenharbor.ai)    -> API Key (thk_live_...), mail.tm
+  [3] TokenMix     (tokenmix.ai)       -> API Key (sk-tm-...), mail.tm
+Choice [1-3] (default 1):
 ```
 
-Setiap akun akan tersimpan di `harvest/sessions.jsonl`. Alat ini otomatis:
-- Mendaftarkan node ZeroTwo di 9Router.
-- Mendaftarkan seluruh 160+ model AI yang dipanen ke 9Router (`zerotwo/<model_id>`).
-- Menghubungkan akun hasil panen ke 9Router.
+#### B. Langsung via Flag Target
+```bash
+# Panen 5 akun Token Harbor (API key thk_live_... disimpan ke harvest/tokenharbor_keys.jsonl)
+llm-harvester run --target tokenharbor --count 5
 
-### 4. Jalankan shim kompatibel OpenAI & sambungkan ke 9Router
+# Panen 3 akun TokenMix (API key sk-tm-... disimpan ke harvest/tokenmix_keys.jsonl)
+llm-harvester run --target tokenmix --count 3
+
+# Panen 2 akun ZeroTwo (sesi disimpan ke harvest/sessions.jsonl & auto-connect ke 9Router)
+llm-harvester run --target zerotwo --count 2
+```
+
+*(Catatan: Alias `zt-harvester` dan `zt-farming` tetap tersedia).*
+
+### 4. Jalankan shim kompatibel OpenAI & sambungkan ke 9Router (Khusus ZeroTwo)
 
 Jalankan shim lokal (otomatis membaca cookie & CSRF token terbaru dari `harvest/sessions.jsonl`):
 
 ```bash
-zt-farming shim --port 8787
+llm-harvester shim --port 8787
 ```
 
 ---

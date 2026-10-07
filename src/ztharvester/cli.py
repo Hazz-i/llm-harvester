@@ -31,8 +31,8 @@ def _console():
 def _banner() -> None:
     c = _console()
     text = (
-        "\n[bold cyan]zt-farming[/bold cyan] - bulk ZeroTwo account creator & "
-        "9Router harvester\n" if c else "zt-farming\n"
+        "\n[bold cyan]llm-harvester[/bold cyan] - multi-platform AI / LLM account creator & "
+        "token harvester\n" if c else "llm-harvester\n"
     )
     c.print(text) if c else print(text)
 
@@ -102,7 +102,7 @@ def _resolve_target(explicit_target: str | None, cfg_target: str = "select") -> 
 
 
 if typer is not None:
-    app = typer.Typer(add_completion=False, help="Bulk ZeroTwo account creator + 9Router harvester")
+    app = typer.Typer(add_completion=False, help="Multi-platform AI / LLM account creator & token harvester")
 
     @app.command()
     def run(
