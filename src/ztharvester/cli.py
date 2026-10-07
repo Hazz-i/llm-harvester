@@ -195,10 +195,11 @@ if typer is not None:
 
     @app.command()
     def sync(
+        target: str = typer.Option("all", "--target", "-t", help="Target platform: zerotwo | tokenharbor | tokenmix | all"),
         router_url: str | None = typer.Option(None, "--router-url", help="9Router base URL"),
         config: Path | None = typer.Option(None, "--config", "-c", help="TOML config file"),
     ) -> None:
-        """Sync harvested sessions into 9Router (refreshes tokens & credentials)."""
+        """Sync harvested sessions or API keys into 9Router (registers nodes, credentials & models)."""
         _banner()
         cfg = (
             HarvesterConfig.from_toml(config)
@@ -208,13 +209,20 @@ if typer is not None:
         if router_url:
             cfg.router.base_url = router_url
 
+        from .catalog import get_default_models
         from .router9 import NineRouterClient
-        from .shim import _load_all_sessions
 
-        sessions = _load_all_sessions()
-        if not sessions:
-            print("No sessions found in harvest/sessions.jsonl")
-            return
+        def _read_records(p: Path) -> list[dict[str, Any]]:
+            if not p.exists():
+                return []
+            res = []
+            for line in p.read_text().splitlines():
+                if line.strip():
+                    try:
+                        res.append(json.loads(line))
+                    except Exception:
+                        pass
+            return res
 
         client = NineRouterClient(
             cfg.router.base_url,
@@ -227,17 +235,94 @@ if typer is not None:
         async def _do_sync():
             if cfg.router.password:
                 await client.login_with_password()
-            node_id = await client.ensure_node(
-                base_url=cfg.router.shim_base_url,
-                prefix=cfg.router.node_prefix,
+
+            targets_to_sync = (
+                ["zerotwo", "tokenharbor", "tokenmix"]
+                if target.lower() in ("all", "*")
+                else [target.lower()]
             )
-            count = await client.sync_connections(
-                sessions,
-                node_id=node_id,
-                node_prefix=cfg.router.node_prefix,
-                extra={"base_url": cfg.router.shim_base_url},
-            )
-            _log(f"[router] Synced {count} connection(s) to 9Router at {cfg.router.base_url}")
+
+            total_synced = 0
+            for t in targets_to_sync:
+                if t in ("zerotwo", "zt"):
+                    sessions = _read_records(Path(cfg.output_dir) / "sessions.jsonl")
+                    if not sessions:
+                        _log(f"[router] No ZeroTwo sessions found in {cfg.output_dir}/sessions.jsonl")
+                        continue
+                    node_id = await client.ensure_node(
+                        name=cfg.router.node_name,
+                        base_url=cfg.router.shim_base_url,
+                        prefix=cfg.router.node_prefix,
+                    )
+                    if node_id:
+                        await client.sync_custom_models(node_id, get_default_models("zerotwo"))
+                    count = await client.sync_connections(
+                        sessions,
+                        node_id=node_id,
+                        node_prefix=cfg.router.node_prefix,
+                        extra={
+                            "base_url": cfg.router.shim_base_url,
+                            "node_name": cfg.router.node_name,
+                            "display_name": "ZeroTwo",
+                            "account_type": "zerotwo",
+                        },
+                    )
+                    _log(f"[router] ZeroTwo: synced {count} connection(s) (node={node_id})")
+                    total_synced += count
+
+                elif t in ("tokenharbor", "th"):
+                    keys = _read_records(Path(cfg.output_dir) / "tokenharbor_keys.jsonl")
+                    if not keys:
+                        _log(f"[router] No Token Harbor keys found in {cfg.output_dir}/tokenharbor_keys.jsonl")
+                        continue
+                    node_id = await client.ensure_node(
+                        name=cfg.tokenharbor.node_name,
+                        base_url=cfg.tokenharbor.api_base,
+                        prefix=cfg.tokenharbor.node_prefix,
+                    )
+                    if node_id:
+                        await client.sync_custom_models(node_id, get_default_models("tokenharbor"))
+                    count = await client.sync_connections(
+                        keys,
+                        node_id=node_id,
+                        node_prefix=cfg.tokenharbor.node_prefix,
+                        extra={
+                            "base_url": cfg.tokenharbor.api_base,
+                            "node_name": cfg.tokenharbor.node_name,
+                            "display_name": "Token Harbor",
+                            "account_type": "tokenharbor",
+                        },
+                    )
+                    _log(f"[router] Token Harbor: synced {count} key(s) (node={node_id})")
+                    total_synced += count
+
+                elif t in ("tokenmix", "tm"):
+                    keys = _read_records(Path(cfg.output_dir) / "tokenmix_keys.jsonl")
+                    if not keys:
+                        _log(f"[router] No TokenMix keys found in {cfg.output_dir}/tokenmix_keys.jsonl")
+                        continue
+                    node_id = await client.ensure_node(
+                        name=cfg.tokenmix.node_name,
+                        base_url=cfg.tokenmix.api_base,
+                        prefix=cfg.tokenmix.node_prefix,
+                    )
+                    if node_id:
+                        await client.sync_custom_models(node_id, get_default_models("tokenmix"))
+                    count = await client.sync_connections(
+                        keys,
+                        node_id=node_id,
+                        node_prefix=cfg.tokenmix.node_prefix,
+                        extra={
+                            "base_url": cfg.tokenmix.api_base,
+                            "node_name": cfg.tokenmix.node_name,
+                            "display_name": "TokenMix",
+                            "account_type": "tokenmix",
+                        },
+                    )
+                    _log(f"[router] TokenMix: synced {count} key(s) (node={node_id})")
+                    total_synced += count
+
+            _log(f"[router] Total synced {total_synced} connection(s) to 9Router at {cfg.router.base_url}")
 
         asyncio.run(_do_sync())
 

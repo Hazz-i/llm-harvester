@@ -28,6 +28,9 @@ class TokenHarborConfig:
     key_name_prefix: str = "prod-th"
     wait_seconds: float = 120.0
     max_retries: int = 2
+    api_base: str = "https://tokenharbor.ai/v1"
+    node_name: str = "Token Harbor"
+    node_prefix: str = "tokenharbor"
 
 
 @dataclass
@@ -36,6 +39,10 @@ class TokenMixConfig:
     referral_code: str | None = None
     wait_seconds: float = 120.0
     max_retries: int = 2
+    api_base: str = "https://api.tokenmix.ai/v1"
+    node_name: str = "TokenMix"
+    node_prefix: str = "tokenmix"
+
 
 
 @dataclass
@@ -107,7 +114,13 @@ class HarvesterConfig:
         cfg.zerotwo.name = os.getenv("ZT_NAME", cfg.zerotwo.name)
         cfg.zerotwo.interest = os.getenv("ZT_INTEREST", cfg.zerotwo.interest)
         cfg.tokenharbor.key_name_prefix = os.getenv("TH_KEY_PREFIX", cfg.tokenharbor.key_name_prefix)
+        cfg.tokenharbor.api_base = os.getenv("TH_API_BASE", cfg.tokenharbor.api_base)
+        cfg.tokenharbor.node_name = os.getenv("TH_NODE_NAME", cfg.tokenharbor.node_name)
+        cfg.tokenharbor.node_prefix = os.getenv("TH_NODE_PREFIX", cfg.tokenharbor.node_prefix)
         cfg.tokenmix.key_name_prefix = os.getenv("TM_KEY_PREFIX", cfg.tokenmix.key_name_prefix)
+        cfg.tokenmix.api_base = os.getenv("TM_API_BASE", cfg.tokenmix.api_base)
+        cfg.tokenmix.node_name = os.getenv("TM_NODE_NAME", cfg.tokenmix.node_name)
+        cfg.tokenmix.node_prefix = os.getenv("TM_NODE_PREFIX", cfg.tokenmix.node_prefix)
         cfg.tokenmix.referral_code = os.getenv("TM_REFERRAL") or cfg.tokenmix.referral_code
         cfg.router.base_url = os.getenv("NINEROUTER_URL", cfg.router.base_url)
         cfg.router.api_key = os.getenv("NINEROUTER_API_KEY", cfg.router.api_key)

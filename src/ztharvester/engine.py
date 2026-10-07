@@ -13,6 +13,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+from .catalog import fetch_provider_models, get_default_models
 from .cdp import BridgeCDP, HttpCDP, LocalCDP
 from .config import HarvesterConfig
 from .mail import MailProvider
@@ -111,15 +112,35 @@ class Harvester:
                 record = res.as_dict()
                 record["index"] = index
                 record["finished_at"] = time.time()
+                if router is not None and res.ok and cfg.router.enabled:
+                    models = await fetch_provider_models("tokenharbor", res.api_key, cfg.tokenharbor.api_base)
+                    record["models"] = [m["id"] for m in models]
+                    if node_id:
+                        await router.sync_custom_models(node_id, models)
+                    r_res = await router.connect_session(
+                        email=res.email,
+                        access_token=res.api_key,
+                        node_id=node_id,
+                        node_prefix=cfg.tokenharbor.node_prefix,
+                        extra={
+                            "base_url": cfg.tokenharbor.api_base,
+                            "node_name": cfg.tokenharbor.node_name,
+                            "display_name": "Token Harbor",
+                            "account_type": "tokenharbor",
+                            "api_type": "chat",
+                        },
+                    )
+                    record["router"] = asdict(r_res)
+                    self.log(f"[{index}] 9router: {'ok' if r_res.ok else r_res.message} ({len(record['models'])} models)")
                 self.ledger.append(record)
                 return record
             finally:
                 launcher = getattr(cdp, "_launcher", None)
                 if launcher and hasattr(launcher, "stop"):
                     try:
-                        res = launcher.stop()
-                        if asyncio.iscoroutine(res):
-                            await res
+                        res_stop = launcher.stop()
+                        if asyncio.iscoroutine(res_stop):
+                            await res_stop
                     except Exception:  # noqa: BLE001
                         pass
                 close = getattr(cdp, "close", None)
@@ -137,15 +158,35 @@ class Harvester:
                 record = res.as_dict()
                 record["index"] = index
                 record["finished_at"] = time.time()
+                if router is not None and res.ok and cfg.router.enabled:
+                    models = await fetch_provider_models("tokenmix", res.api_key, cfg.tokenmix.api_base)
+                    record["models"] = [m["id"] for m in models]
+                    if node_id:
+                        await router.sync_custom_models(node_id, models)
+                    r_res = await router.connect_session(
+                        email=res.email,
+                        access_token=res.api_key,
+                        node_id=node_id,
+                        node_prefix=cfg.tokenmix.node_prefix,
+                        extra={
+                            "base_url": cfg.tokenmix.api_base,
+                            "node_name": cfg.tokenmix.node_name,
+                            "display_name": "TokenMix",
+                            "account_type": "tokenmix",
+                            "api_type": "chat",
+                        },
+                    )
+                    record["router"] = asdict(r_res)
+                    self.log(f"[{index}] 9router: {'ok' if r_res.ok else r_res.message} ({len(record['models'])} models)")
                 self.ledger.append(record)
                 return record
             finally:
                 launcher = getattr(cdp, "_launcher", None)
                 if launcher and hasattr(launcher, "stop"):
                     try:
-                        res = launcher.stop()
-                        if asyncio.iscoroutine(res):
-                            await res
+                        res_stop = launcher.stop()
+                        if asyncio.iscoroutine(res_stop):
+                            await res_stop
                     except Exception:  # noqa: BLE001
                         pass
                 close = getattr(cdp, "close", None)
@@ -203,9 +244,8 @@ class Harvester:
         record.update(account)
         if router is not None and session.ok and cfg.router.enabled:
             if node_id:
-                from ztharvester.shim import ALLOWED_MODELS
-
-                await router.sync_custom_models(node_id, ALLOWED_MODELS)
+                models = session.models if session.models else get_default_models("zerotwo")
+                await router.sync_custom_models(node_id, models)
             result = await router.connect_session(
                 email=session.email,
                 access_token=session.access_token,
@@ -214,6 +254,8 @@ class Harvester:
                 extra={
                     "base_url": cfg.router.shim_base_url,
                     "node_name": cfg.router.node_name,
+                    "display_name": "ZeroTwo",
+                    "account_type": "zerotwo",
                     "api_type": "chat",
                 },
             )
@@ -234,7 +276,7 @@ class Harvester:
 
         router: NineRouterClient | None = None
         node_id: str | None = None
-        if cfg.router.enabled and cfg.target == "zerotwo":
+        if cfg.router.enabled and cfg.target in ("zerotwo", "tokenharbor", "tokenmix"):
             router = NineRouterClient(
                 cfg.router.base_url,
                 api_key=cfg.router.api_key,
@@ -243,12 +285,31 @@ class Harvester:
                 log=self.log,
             )
             if await router.health():
-                node_id = await router.ensure_node(
-                    name=cfg.router.node_name,
-                    base_url=cfg.router.shim_base_url,
-                    prefix=cfg.router.node_prefix,
-                )
-                self.log(f"9router online, node={node_id}")
+                if cfg.target == "tokenharbor":
+                    node_id = await router.ensure_node(
+                        name=cfg.tokenharbor.node_name,
+                        base_url=cfg.tokenharbor.api_base,
+                        prefix=cfg.tokenharbor.node_prefix,
+                    )
+                    if node_id:
+                        await router.sync_custom_models(node_id, get_default_models("tokenharbor"))
+                elif cfg.target == "tokenmix":
+                    node_id = await router.ensure_node(
+                        name=cfg.tokenmix.node_name,
+                        base_url=cfg.tokenmix.api_base,
+                        prefix=cfg.tokenmix.node_prefix,
+                    )
+                    if node_id:
+                        await router.sync_custom_models(node_id, get_default_models("tokenmix"))
+                else:
+                    node_id = await router.ensure_node(
+                        name=cfg.router.node_name,
+                        base_url=cfg.router.shim_base_url,
+                        prefix=cfg.router.node_prefix,
+                    )
+                    if node_id:
+                        await router.sync_custom_models(node_id, get_default_models("zerotwo"))
+                self.log(f"9router online, target={cfg.target}, node={node_id}")
             else:
                 self.log("9router unreachable - sessions will be saved but not routed "
                          f"({cfg.router.base_url})")

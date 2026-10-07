@@ -203,32 +203,34 @@ class NineRouterClient:
         node_prefix: str = SHIM_PREFIX,
         extra: dict[str, Any] | None = None,
     ) -> RouterResult:
-        """Register one harvested ZeroTwo session as a 9Router connection.
-
-        The harvested JWT is stored as the connection's credential; the shim
-        reads it from the ``Authorization`` header. Because ZeroTwo bulk
-        accounts share a provider, every account becomes its own connection
-        under the shared ZeroTwo node - exactly like 9Router's multi-key
-        pooling.
-        """
+        """Register one harvested account credential as a 9Router connection."""
         if not access_token:
-            return RouterResult(ok=False, message="missing access token")
+            return RouterResult(ok=False, message="missing access token or api key")
         provider = node_id or f"openai-compatible-{node_prefix}"
+        extra = extra or {}
+        display_name = extra.get("display_name")
+        if not display_name:
+            if node_prefix == "tokenharbor":
+                display_name = "Token Harbor"
+            elif node_prefix == "tokenmix":
+                display_name = "TokenMix"
+            else:
+                display_name = "ZeroTwo"
         psd: dict[str, Any] = {
             "prefix": node_prefix,
-            "apiType": (extra or {}).get("api_type", "chat"),
-            "baseUrl": (extra or {}).get("base_url", ""),
-            "nodeName": (extra or {}).get("node_name", "ZeroTwo (shim)"),
+            "apiType": extra.get("api_type", "chat"),
+            "baseUrl": extra.get("base_url", ""),
+            "nodeName": extra.get("node_name", f"{display_name} (node)"),
             "connectionProxyEnabled": False,
             "connectionProxyUrl": "",
             "connectionNoProxy": "",
             "email": email,
-            "accountType": "zerotwo",
+            "accountType": extra.get("account_type", node_prefix),
         }
         return await self.add_connection(
             provider=provider,
             api_key=access_token,
-            name=f"ZeroTwo · {email}",
+            name=f"{display_name} · {email}",
             provider_specific=psd,
         )
 
@@ -276,22 +278,28 @@ class NineRouterClient:
         node_prefix: str = SHIM_PREFIX,
         extra: dict[str, Any] | None = None,
     ) -> int:
-        """Sync harvested sessions with 9Router connections (create or update)."""
+        """Sync harvested sessions or API keys with 9Router connections (create or update)."""
         providers = await self.list_providers()
         existing_by_email: dict[str, dict[str, Any]] = {}
         for p in providers:
             name = p.get("name", "")
-            if name.startswith("ZeroTwo · "):
-                em = name.removeprefix("ZeroTwo · ").strip()
+            if " · " in name:
+                em = name.split(" · ", 1)[1].strip()
                 existing_by_email[em] = p
             elif (p.get("providerSpecificData") or {}).get("email"):
                 existing_by_email[p["providerSpecificData"]["email"]] = p
 
         synced = 0
         target_provider = node_id or f"openai-compatible-{node_prefix}"
+        extra = extra or {}
+        display_name = extra.get("display_name") or (
+            "Token Harbor" if node_prefix == "tokenharbor" else
+            "TokenMix" if node_prefix == "tokenmix" else
+            "ZeroTwo"
+        )
         for s in sessions:
             email = s.get("email")
-            token = s.get("access_token")
+            token = s.get("access_token") or s.get("api_key")
             if not email or not token:
                 continue
             if email in existing_by_email:
@@ -299,20 +307,20 @@ class NineRouterClient:
                 cid = conn.get("id")
                 psd = conn.get("providerSpecificData") or {
                     "prefix": node_prefix,
-                    "apiType": (extra or {}).get("api_type", "chat"),
-                    "baseUrl": (extra or {}).get("base_url", ""),
-                    "nodeName": (extra or {}).get("node_name", "ZeroTwo (shim)"),
+                    "apiType": extra.get("api_type", "chat"),
+                    "baseUrl": extra.get("base_url", ""),
+                    "nodeName": extra.get("node_name", f"{display_name} (node)"),
                     "connectionProxyEnabled": False,
                     "connectionProxyUrl": "",
                     "connectionNoProxy": "",
                     "email": email,
-                    "accountType": "zerotwo",
+                    "accountType": extra.get("account_type", node_prefix),
                 }
                 res = await self.update_connection(
                     cid,
                     provider=conn.get("provider") or target_provider,
                     api_key=token,
-                    name=conn.get("name") or f"ZeroTwo · {email}",
+                    name=conn.get("name") or f"{display_name} · {email}",
                     is_active=True,
                     provider_specific=psd,
                 )

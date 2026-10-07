@@ -24,10 +24,10 @@
 1. **Multi-Target Farming**: Mendukung **ZeroTwo** (`app.zerotwo.ai`), **Token Harbor** (`tokenharbor.ai`), dan **TokenMix** (`tokenmix.ai`) dengan menu interaktif atau flag CLI.
 2. **Otomasi Akun**: Membuat akun otomatis menggunakan email sekali pakai dari `mail.tm`.
 3. **Turnstile & Verifikasi**: Menangani proteksi anti-bot Cloudflare Turnstile serta verifikasi email magic link maupun kode OTP secara otomatis.
-4. **Panen Kredensial**:
+4. **Panen Kredensial & Integrasi Otomatis 9Router**:
    - **ZeroTwo**: Mengambil JWT Supabase, cookie, token CSRF, dan terhubung ke **9Router** via OpenAI shim lokal.
-   - **Token Harbor**: Mengambil API key dashboard (`thk_live_...`).
-   - **TokenMix**: Mengambil API key dashboard (`sk-tm-...`).
+   - **Token Harbor**: Mengambil API key dashboard (`thk_live_...`), menyinkronkan 20+ model ID, dan otomatis terdaftar sebagai node OpenAI di **9Router**.
+   - **TokenMix**: Mengambil API key dashboard (`sk-tm-...`), menyinkronkan 22+ model ID, dan otomatis terdaftar sebagai node OpenAI di **9Router**.
 5. **Output Ledger**: Menyimpan hasil panen ke file JSONL crash-safe (`sessions.jsonl`, `tokenharbor_keys.jsonl`, `tokenmix_keys.jsonl`).
 
 ## Arsitektur
@@ -62,21 +62,21 @@
                ┌───────────────────────┐ ┌───────────────────────┐ ┌───────────────────────┐
                │ harvest/              │ │ harvest/              │ │ harvest/              │
                │ sessions.jsonl        │ │ tokenharbor_keys.jsonl│ │ tokenmix_keys.jsonl   │
-               └──────────┬────────────┘ └───────────────────────┘ └───────────────────────┘
-                          │
-             Input Sesi   │ Registrasi Otomatis Node,
-             Live         │ Model & Kredensial via API
-                          ▼
-               ┌───────────────────────┐
-               │ OpenAI Shim (:8787)   │
-               │ (Dynamic Auth & SSE)  │
-               └──────────▲────────────┘
-                          │ Meneruskan Chat Completions
-                          │ (:20128 /v1)
-                          ▼
-               ┌───────────────────────┐
-               │  AI Gateway 9Router   │
-               └───────────────────────┘
+               └──────────┬────────────┘ └──────────┬────────────┘ └───────────┬───────────┘
+                          │                         │                          │
+             Via Shim     │                         │ Node OpenAI Langsung     │ Node OpenAI Langsung
+             & SSE        │                         │ + Sinkronisasi Model     │ + Sinkronisasi Model
+                          ▼                         ▼                          ▼
+               ┌───────────────────────┐ ┌─────────────────────────────────────────────────┐
+               │  OpenAI Shim (:8787)  │ │      Node Provider OpenAI Standar (9Router)     │
+               └──────────┬────────────┘ └─────────────────────────┬───────────────────────┘
+                          │                                        │
+                          └───────────────────┬────────────────────┘
+                                              ▼
+                                 ┌─────────────────────────┐
+                                 │   AI Gateway 9Router    │
+                                 │  (Multi-Account Pooling)│
+                                 └─────────────────────────┘
 ```
 
 ### Penjelasan Alur Arsitektur
@@ -98,9 +98,10 @@
    - `harvest/tokenharbor_keys.jsonl` (API key Token Harbor)
    - `harvest/tokenmix_keys.jsonl` (API key TokenMix)
 
-5. **OpenAI Shim (`:8787`) & Integrasi 9Router (`:20128`) (Khusus ZeroTwo)**:  
-   - **OpenAI Shim**: Menerjemahkan request standar OpenAI `/v1/chat/completions` ke protokol internal ZeroTwo serta otomatis merefresh token JWT yang hampir expired menggunakan *refresh token*.
-   - **9Router AI Gateway**: Mendaftarkan provider node baru secara otomatis, memetakan 160+ model AI yang didukung (`zerotwo/<model_id>`), dan membagi beban ke kumpulan akun yang dipanen.
+5. **Integrasi Langsung 9Router & Sinkronisasi Model**:  
+   - **ZeroTwo**: Mendaftarkan node OpenAI yang diarahkan ke shim lokal (`http://localhost:8787/v1`) dan memetakan model eksklusif ZeroTwo (`gpt-6-luna`, `deepseek-v4.1-flash`, dll.).
+   - **Token Harbor**: Langsung membuat node OpenAI di 9Router (`https://tokenharbor.ai/v1`, prefix: `tokenharbor`), menghubungkan API key hasil panen, dan otomatis mendaftarkan 20+ model (`claude-opus-5.5`, `gpt-6-astra`, `deepseek-v3`, dll.).
+   - **TokenMix**: Langsung membuat node OpenAI di 9Router (`https://api.tokenmix.ai/v1`, prefix: `tokenmix`), menghubungkan API key hasil panen, dan otomatis mendaftarkan 22+ model (`gpt-4o`, `deepseek-v4`, `gemini-2.5-flash`, dll.).
 
 
 ## Instalasi

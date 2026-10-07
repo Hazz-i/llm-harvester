@@ -18,12 +18,18 @@ max_retries = 2
 key_name_prefix = "prod-th"
 wait_seconds = 120.0
 max_retries = 2
+api_base = "https://tokenharbor.ai/v1"
+node_name = "Token Harbor"
+node_prefix = "tokenharbor"
 
 [tokenmix]
 key_name_prefix = "prod-tm"
 # referral_code = ""
 wait_seconds = 120.0
 max_retries = 2
+api_base = "https://api.tokenmix.ai/v1"
+node_name = "TokenMix"
+node_prefix = "tokenmix"
 
 [router]
 enabled = true

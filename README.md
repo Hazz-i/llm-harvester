@@ -24,10 +24,10 @@
 1. **Multi-Target Farming**: Supports **ZeroTwo** (`app.zerotwo.ai`), **Token Harbor** (`tokenharbor.ai`), and **TokenMix** (`tokenmix.ai`) with interactive CLI selection or direct flag.
 2. **Automated Provisioning**: Automatically registers accounts using disposable mailboxes from `mail.tm`.
 3. **Turnstile & Verification**: Automatically handles Cloudflare Turnstile anti-bot challenges and clicks verification email links or enters OTP codes.
-4. **Credential Harvesting**:
-   - **ZeroTwo**: Extracts Supabase JWTs (`access_token`, `refresh_token`), cookies (`cf_clearance`, `__csrf`), CSRF tokens, and registers into **9Router** with a local OpenAI shim.
-   - **Token Harbor**: Automatically creates dashboard API keys (`thk_live_...`).
-   - **TokenMix**: Automatically creates dashboard API keys (`sk-tm-...`).
+4. **Credential Harvesting & 9Router Auto-Connect**:
+   - **ZeroTwo**: Extracts Supabase JWTs (`access_token`, `refresh_token`), cookies (`cf_clearance`, `__csrf`), CSRF tokens, and registers into **9Router** via a local OpenAI shim.
+   - **Token Harbor**: Generates `thk_live_...` API keys, extracts/syncs model IDs, and auto-registers into **9Router** as a native OpenAI-compatible provider node.
+   - **TokenMix**: Generates `sk-tm-...` API keys, extracts/syncs model IDs, and auto-registers into **9Router** as a native OpenAI-compatible provider node.
 5. **Ledger Output**: Writes crash-safe, append-only JSONL files (`sessions.jsonl`, `tokenharbor_keys.jsonl`, `tokenmix_keys.jsonl`).
 
 ## Architecture
@@ -62,21 +62,21 @@
                ┌───────────────────────┐ ┌───────────────────────┐ ┌───────────────────────┐
                │ harvest/              │ │ harvest/              │ │ harvest/              │
                │ sessions.jsonl        │ │ tokenharbor_keys.jsonl│ │ tokenmix_keys.jsonl   │
-               └──────────┬────────────┘ └───────────────────────┘ └───────────────────────┘
-                          │
-             Feeds Live   │ Auto-registers Node,
-             Credentials  │ Models & Keys via API
-                          ▼
-               ┌───────────────────────┐
-               │ OpenAI Shim (:8787)   │
-               │ (Dynamic Auth & SSE)  │
-               └──────────▲────────────┘
-                          │ Proxies Chat Completions
-                          │ (:20128 /v1)
-                          ▼
-               ┌───────────────────────┐
-               │  9Router AI Gateway   │
-               └───────────────────────┘
+               └──────────┬────────────┘ └──────────┬────────────┘ └───────────┬───────────┘
+                          │                         │                          │
+             Via Shim     │                         │ Direct OpenAI Node       │ Direct OpenAI Node
+             & SSE        │                         │ + Model Catalog Sync     │ + Model Catalog Sync
+                          ▼                         ▼                          ▼
+               ┌───────────────────────┐ ┌─────────────────────────────────────────────────┐
+               │  OpenAI Shim (:8787)  │ │      Native OpenAI Provider Nodes (9Router)     │
+               └──────────┬────────────┘ └─────────────────────────┬───────────────────────┘
+                          │                                        │
+                          └───────────────────┬────────────────────┘
+                                              ▼
+                                 ┌─────────────────────────┐
+                                 │   9Router AI Gateway    │
+                                 │  (Multi-Account Pooling)│
+                                 └─────────────────────────┘
 ```
 
 ### Architecture Flow Explained
@@ -98,9 +98,11 @@
    - `harvest/tokenharbor_keys.jsonl` (Token Harbor API keys)
    - `harvest/tokenmix_keys.jsonl` (TokenMix API keys)
 
-5. **ZeroTwo OpenAI Shim (`:8787`) & 9Router Integration (`:20128`)**:
-   - **OpenAI Shim**: Translates standard OpenAI `/v1/chat/completions` requests to ZeroTwo's internal protocol and automatically refreshes expired Supabase JWTs.
-   - **9Router AI Gateway**: Automatically registers provider nodes, maps all 160+ ZeroTwo models (`zerotwo/<model_id>`), and distributes requests across pooled accounts.
+5. **Direct 9Router Integration & Model Catalog Sync**:
+   - **ZeroTwo**: Registers an OpenAI-compatible node with `baseUrl: http://localhost:8787/v1` backed by the local shim, mapping exclusive ZeroTwo models (`gpt-6-luna`, `deepseek-v4.1-flash`, etc.).
+   - **Token Harbor**: Directly creates an OpenAI provider node in 9Router (`baseUrl: https://tokenharbor.ai/v1`, prefix: `tokenharbor`), registers harvested API keys as connection accounts, and automatically syncs all 20+ model IDs (`claude-opus-5.5`, `gpt-6-astra`, `deepseek-v3`, etc.).
+   - **TokenMix**: Directly creates an OpenAI provider node in 9Router (`baseUrl: https://api.tokenmix.ai/v1`, prefix: `tokenmix`), registers harvested API keys as connection accounts, and automatically syncs all 22+ model IDs (`gpt-4o`, `deepseek-v4`, `gemini-2.5-flash`, etc.).
+
 
 
 ## Install
