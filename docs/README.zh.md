@@ -1,7 +1,7 @@
 <div align="center">
 
 
-# zt-farming
+# llm-harvester
 
 **ZeroTwo 批量账号创建器 · 会话 / 令牌 / Cookie 采集 · 9Router 自动连接**
 
@@ -60,8 +60,8 @@
 ## 安装
 
 ```bash
-git clone https://github.com/Hazz-i/zt-farming.git
-cd zt-farming
+git clone https://github.com/Hazz-i/llm-harvester.git
+cd llm-harvester
 pip install -e ".[shim]"
 ```
 

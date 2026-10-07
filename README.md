@@ -195,7 +195,7 @@ llm-harvester run --target tokenmix --count 3
 llm-harvester run --target zerotwo --count 2
 ```
 
-*(Note: `zt-harvester` and `zt-farming` aliases are also available).*
+*(Note: `zt-harvester` alias is also available).*
 
 ### 4. Run the OpenAI-compatible shim (ZeroTwo ONLY)
 
@@ -338,7 +338,7 @@ pm2 logs zt-shim
 
 ## CLI Reference
 
-*(Note: `zt-harvester` and `zt-farming` are also retained as aliases for backwards compatibility)*.
+*(Note: `zt-harvester` is also retained as an alias for backwards compatibility)*.
 
 | Command | Purpose |
 | --- | --- |
@@ -377,7 +377,7 @@ Proxies are applied to:
 > `proxy_country_code`, not a custom proxy URL, so a pool is used with a local
 > Chromium launch (mode `cdp` without `--cdp-ws`/`--cdp-url`). Some reseller
 > pools restrict access to a whitelisted source IP — verify with
-> `zt-farming proxies --check` before a long run.
+> `llm-harvester proxies --check` before a long run.
 
 Set `ZT_PROXIES` (newline/comma separated) or `ZT_PROXY_FILE` to configure the
 pool through the environment.
@@ -401,7 +401,7 @@ Copy `config.example.toml` and `env.example`:
 ```bash
 cp config.example.toml config.toml
 cp .env.example .env
-zt-farming run -n 3 --config config.toml
+llm-harvester run -n 3 --config config.toml
 ```
 
 Every field is documented inline in `config.example.toml`.

@@ -194,7 +194,7 @@ llm-harvester run --target tokenmix --count 3
 llm-harvester run --target zerotwo --count 2
 ```
 
-*(Catatan: Alias `zt-harvester` dan `zt-farming` tetap tersedia).*
+*(Catatan: Alias `zt-harvester` tetap tersedia).*
 
 ### 4. Jalankan shim kompatibel OpenAI (Khusus ZeroTwo)
 
@@ -342,7 +342,7 @@ pm2 logs zt-shim
 
 ## Referensi Perintah CLI
 
-*(Catatan: Perintah `zt-harvester` dan `zt-farming` tetap didukung sebagai alias)*.
+*(Catatan: Perintah `zt-harvester` tetap didukung sebagai alias)*.
 
 | Perintah | Fungsi |
 | --- | --- |
@@ -388,7 +388,7 @@ Salin `config.example.toml` dan `.env.example`:
 ```bash
 cp config.example.toml config.toml
 cp .env.example .env
-zt-farming run -n 3 --config config.toml
+llm-harvester run -n 3 --config config.toml
 ```
 
 Semua kolom terdokumentasi langsung di dalam `config.example.toml`.

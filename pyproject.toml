@@ -36,7 +36,6 @@ dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.5"]
 [project.scripts]
 llm-harvester = "ztharvester.cli:_entry"
 zt-harvester = "ztharvester.cli:_entry"
-zt-farming = "ztharvester.cli:_entry"
 
 [project.urls]
 Homepage = "https://github.com/Hazz-i/llm-harvester"

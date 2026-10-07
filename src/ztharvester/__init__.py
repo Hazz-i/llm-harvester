@@ -1,4 +1,4 @@
-"""zt-farming: bulk ZeroTwo account creator and 9Router harvester & farm."""
+"""llm-harvester: multi-platform AI / LLM account creator and token harvester."""
 
 from .zerotwo import HarvestedSession, ZeroTwoCreator
 from .router9 import NineRouterClient

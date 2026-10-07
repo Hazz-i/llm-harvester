@@ -1,7 +1,7 @@
 <div align="center">
 
 
-# zt-farming
+# llm-harvester
 
 **Creador masivo de cuentas ZeroTwo · recolector de sesión / token / cookies · conexión automática a 9Router**
 
@@ -60,8 +60,8 @@
 ## Instalación
 
 ```bash
-git clone https://github.com/Hazz-i/zt-farming.git
-cd zt-farming
+git clone https://github.com/Hazz-i/llm-harvester.git
+cd llm-harvester
 pip install -e ".[shim]"
 ```
 

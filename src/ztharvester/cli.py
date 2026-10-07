@@ -1,4 +1,4 @@
-"""zt-farming command line interface."""
+"""llm-harvester command line interface."""
 
 from __future__ import annotations
 
@@ -119,7 +119,7 @@ if typer is not None:
         proxy_file: str | None = typer.Option(None, "--proxy-file", help="File with one proxy per line"),
         concurrency: int | None = typer.Option(None, "--concurrency", help="Parallel sign-ups"),
         output: str | None = typer.Option(None, "--output", "-o", help="Output directory"),
-        remote_sync: str | None = typer.Option(None, "--remote-sync", "-s", help="Remote SSH/SCP destination (e.g. user@vps:/opt/zt-farming/harvest/sessions.jsonl)"),
+        remote_sync: str | None = typer.Option(None, "--remote-sync", "-s", help="Remote SSH/SCP destination (e.g. user@vps:/opt/llm-harvester/harvest/sessions.jsonl)"),
     ) -> None:
         """Create accounts and register them into 9Router."""
         _banner()
