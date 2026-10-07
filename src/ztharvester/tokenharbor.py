@@ -186,52 +186,46 @@ class TokenHarborCreator:
         if not form_ready:
             raise RuntimeError("Signup form failed to render email input")
 
-        # 2. Fill email and password
-        await self.cdp.evaluate(
-            """(()=>{
-                const em = document.querySelector('input[type="email"]') || document.querySelector('#email') || document.querySelector('input[name="email"]');
-                if (em) {
-                    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
-                    setter.call(em, %s);
-                    em.dispatchEvent(new Event('input', {bubbles: true}));
-                    em.dispatchEvent(new Event('change', {bubbles: true}));
-                }
-                const pw = document.querySelector('input[type="password"]') || document.querySelector('#password') || document.querySelector('input[name="password"]');
-                if (pw) {
-                    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
-                    setter.call(pw, %s);
-                    pw.dispatchEvent(new Event('input', {bubbles: true}));
-                    pw.dispatchEvent(new Event('change', {bubbles: true}));
-                }
-                return !!(em && pw);
-            })()""" % (json.dumps(email), json.dumps(password))
-        )
-        await self._sleep(1500)
-
-        # 3. Handle Turnstile challenge if present before submitting
-        await self._wait_for_turnstile(timeout_seconds=25.0)
-
-        # 4. Submit form (specifically target the submit / "Create account" button, NOT the tab switcher)
-        self.log("[tokenharbor] Submitting signup form...")
-        signup_ok = False
-        for submit_attempt in range(1, 5):
-            # Ensure email & password are typed (if error cleared it)
+        # 2. Fill email and password helper
+        async def _fill_credentials():
             await self.cdp.evaluate(
                 """(()=>{
-                    const em = document.querySelector('input[type="email"]');
-                    if (em && !em.value) {
+                    const em = document.querySelector('input[type="email"]') || document.querySelector('#email') || document.querySelector('input[name="email"]');
+                    if (em) {
                         const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
                         setter.call(em, %s);
                         em.dispatchEvent(new Event('input', {bubbles: true}));
                         em.dispatchEvent(new Event('change', {bubbles: true}));
                     }
-                    const pw = document.querySelector('input[type="password"]') || document.querySelector('#password');
-                    if (pw && !pw.value) {
+                    const pw = document.querySelector('input[type="password"]') || document.querySelector('#password') || document.querySelector('input[name="password"]');
+                    if (pw) {
                         const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
                         setter.call(pw, %s);
                         pw.dispatchEvent(new Event('input', {bubbles: true}));
                         pw.dispatchEvent(new Event('change', {bubbles: true}));
                     }
+                })()""" % (json.dumps(email), json.dumps(password))
+            )
+
+        await _fill_credentials()
+        await self._sleep(1500)
+
+        # 3. Check if Turnstile is already present on the page
+        has_turnstile = await self.cdp.evaluate(
+            "!!document.querySelector('input[name=\"cf-turnstile-response\"], iframe[src*=\"challenges\"]')"
+        )
+        if has_turnstile:
+            await self._wait_for_turnstile(timeout_seconds=20.0)
+
+        # 4. Submit form (specifically target the submit / "Create account" button, NOT the tab switcher)
+        self.log("[tokenharbor] Submitting signup form...")
+        signup_ok = False
+        for submit_attempt in range(1, 6):
+            await _fill_credentials()
+
+            # Click Create account submit button
+            await self.cdp.evaluate(
+                """(()=>{
                     const btn = document.querySelector('button[type="submit"]') ||
                                 document.querySelector('button[data-analytics="login-signup"]') ||
                                 [...document.querySelectorAll('button')].find(b => /^create account$/i.test((b.innerText || '').trim()));
@@ -240,7 +234,7 @@ class TokenHarborCreator:
                         return true;
                     }
                     return false;
-                })()""" % (json.dumps(email), json.dumps(password))
+                })()"""
             )
             await self._sleep(4000)
 
@@ -249,21 +243,35 @@ class TokenHarborCreator:
                 signup_ok = True
                 break
 
-            # Check if human check or rate limit error appeared
+            # Check for error or notification message
             err_msg = await self.cdp.evaluate(
                 """(()=>{
-                    const errEl = document.querySelector('[data-bordered="true"]');
-                    if (errEl && errEl.innerText) return errEl.innerText.trim();
-                    const p = [...document.querySelectorAll('p, div')].find(el => /(human check|take a breath|fast)/i.test(el.innerText || ''));
-                    return p ? p.innerText.trim() : null;
+                    const p = document.querySelector('p[data-bordered="true"]');
+                    if (p && p.innerText) return p.innerText.trim();
+                    const alerts = [...document.querySelectorAll('p, div, span')].filter(el => {
+                        const t = (el.innerText || '').trim();
+                        return /bot check|human check|take a breath|fast|error|snapped|failed/i.test(t);
+                    });
+                    return alerts.length > 0 ? alerts[0].innerText.trim() : null;
                 })()"""
             )
             if err_msg:
                 self.log(f"[tokenharbor] Notice during signup: {err_msg}")
-                if "human check" in str(err_msg).lower():
+                err_lower = str(err_msg).lower()
+                if "bot check" in err_lower or "snapped" in err_lower or "refresh" in err_lower:
+                    self.log("[tokenharbor] Refreshing signup page after bot check notice...")
+                    await self.cdp.navigate(self.SIGNUP_URL, wait_ms=10000)
+                    await self._sleep(3000)
+                    await _fill_credentials()
+                    await self._wait_for_turnstile(timeout_seconds=25.0)
+                elif "human check" in err_lower:
+                    self.log("[tokenharbor] Human verification challenge active. Waiting for Turnstile...")
                     await self._wait_for_turnstile(timeout_seconds=30.0)
-                elif "take a breath" in str(err_msg).lower() or "fast" in str(err_msg).lower():
+                    await self._sleep(1500)
+                    await _fill_credentials()
+                elif "take a breath" in err_lower or "fast" in err_lower:
                     await self._sleep(8000)
+                    await _fill_credentials()
             else:
                 await self._sleep(2000)
 
