@@ -214,6 +214,8 @@ class NineRouterClient:
                 display_name = "Token Harbor"
             elif node_prefix == "tokenmix":
                 display_name = "TokenMix"
+            elif node_prefix == "elevenlabs":
+                display_name = "ElevenLabs"
             else:
                 display_name = "ZeroTwo"
         psd: dict[str, Any] = {
@@ -295,6 +297,7 @@ class NineRouterClient:
         display_name = extra.get("display_name") or (
             "Token Harbor" if node_prefix == "tokenharbor" else
             "TokenMix" if node_prefix == "tokenmix" else
+            "ElevenLabs" if node_prefix == "elevenlabs" else
             "ZeroTwo"
         )
         for s in sessions:

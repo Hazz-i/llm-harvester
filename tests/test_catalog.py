@@ -13,6 +13,7 @@ def test_get_default_models():
     assert len(get_default_models("tokenharbor")) == len(TOKENHARBOR_MODELS)
     assert len(get_default_models("tokenmix")) == len(TOKENMIX_MODELS)
     assert len(get_default_models("zerotwo")) == len(ZEROTWO_MODELS)
+    assert len(get_default_models("elevenlabs")) >= 5
     assert get_default_models("unknown") == []
 
     th_ids = [m["id"] for m in TOKENHARBOR_MODELS]
@@ -25,6 +26,10 @@ def test_get_default_models():
     tm_ids = [m["id"] for m in TOKENMIX_MODELS]
     assert "gpt-4o" in tm_ids
     assert "deepseek-v4" in tm_ids
+
+    el_ids = [m["id"] for m in get_default_models("elevenlabs")]
+    assert "eleven_multilingual_v2" in el_ids
+    assert "eleven_turbo_v2_5" in el_ids
 
 
 @pytest.mark.asyncio

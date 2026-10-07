@@ -21,7 +21,7 @@
 
 ## What it does
 
-1. **Multi-Target Farming**: Supports **ZeroTwo** (`app.zerotwo.ai`), **Token Harbor** (`tokenharbor.ai`), **TokenMix** (`api.tokenmix.ai`), and **Grok xAI** (`accounts.x.ai`) with interactive terminal selection or direct CLI flags.
+1. **Multi-Target Farming**: Supports **ZeroTwo** (`app.zerotwo.ai`), **Token Harbor** (`tokenharbor.ai`), **TokenMix** (`api.tokenmix.ai`), **ElevenLabs** (`elevenlabs.io`), and **Grok xAI** (`accounts.x.ai`) with interactive terminal selection or direct CLI flags.
 2. **Interactive TUI Dashboard (`./main.py`)**: Full-featured terminal interface with real-time readiness diagnostics, system status tables, and one-click harvesting across 7 dedicated tools.
 3. **Flexible Network Routing (Direct by Default)**:
    - **Direct Connection (Default)**: Uses clean local residential ISP connection for maximum Cloudflare Turnstile human trust score without proxy overhead.
@@ -35,9 +35,10 @@
 6. **Credential Harvesting & 9Router Auto-Connect**:
    - **Token Harbor**: Generates `thk_live_...` API keys, extracts/syncs 20+ model IDs, and auto-registers into **9Router** as a native OpenAI-compatible provider node.
    - **TokenMix**: Generates `sk-tm-...` API keys, extracts/syncs 22+ model IDs, and auto-registers into **9Router** as a native OpenAI-compatible provider node.
+   - **ElevenLabs**: Generates `xi-api-key` (10,000 characters free quota), bypasses onboarding wizard, verifies email via `mail.tm` or IMAP catch-all, and syncs TTS voice models into **9Router**.
    - **ZeroTwo**: Intercepts Supabase JWTs (`access_token`, `refresh_token`), cookies (`cf_clearance`, `__csrf`), CSRF tokens, and registers into **9Router** via a local OpenAI shim.
    - **Grok xAI**: Automates residential proxy account creation with Gmail subaddress aliases and auto-OTP.
-7. **Crash-Safe Ledger Output**: Writes append-only JSONL ledgers (`sessions.jsonl`, `tokenharbor_keys.jsonl`, `tokenmix_keys.jsonl`, `grok_accounts.txt`).
+7. **Crash-Safe Ledger Output**: Writes append-only JSONL ledgers (`sessions.jsonl`, `tokenharbor_keys.jsonl`, `tokenmix_keys.jsonl`, `elevenlabs_keys.jsonl`, `elevenlabs_keys.txt`, `grok_accounts.txt`).
 
 ## Architecture
 
@@ -54,35 +55,35 @@
                                          ▼
    ┌───────────────────────────────────────────────────────────────────────────────────────────────────────────┐
    │                                      BROWSER AUTOMATION & IDENTITY LAYER                                  │
-   │  • Brave / Chromium / Chrome (CDP :9222)                                                                  │
+   │  • Auto-CDP: Brave / Chromium / Chrome (Port :9222, auto-launched without start-browser.sh)                │
    │  • Native CDP Input (`Input.insertText`) + React `_valueTracker` State Sync                               │
    │  • Cloudflare Turnstile Challenge Detection & Auto-Solver                                                 │
-   │  • mail.tm Hydra REST API (Disposable Inboxes, Magic Links & OTP Extraction)                              │
+   │  • mail.tm Hydra REST API & Optional IMAP Catch-All Listener                                              │
    └─────────────────────────────────────┬─────────────────────────────────────────────────────────────────────┘
                                          │ Orchestrates Sign-ups
                                          ▼
    ┌───────────────────────────────────────────────────────────────────────────────────────────────────────────┐
    │                                      MULTI-PLATFORM HARVEST TARGETS                                       │
-   │  ┌──────────────────┐    ┌──────────────────┐    ┌──────────────────┐    ┌──────────────────┐             │
-   │  │  ZeroTwoCreator  │    │TokenHarborCreator│    │ TokenMixCreator  │    │   GrokCreator    │             │
-   │  │ (app.zerotwo.ai) │    │ (tokenharbor.ai) │    │  (tokenmix.ai)   │    │ (accounts.x.ai)  │             │
-   │  └────────┬─────────┘    └────────┬─────────┘    └────────┬─────────┘    └────────┬─────────┘             │
-   └───────────┼───────────────────────┼───────────────────────┼───────────────────────┼───────────────────────┘
-               │                       │                       │                       │
-               │ Supabase JWT,         │ Live API Keys         │ Live API Keys         │ Session Tokens
-               │ Cookies & CSRF        │ (thk_live_...)        │ (sk-tm-...)           │ & Auth Credentials
-               ▼                       ▼                       ▼                       ▼
-   ┌──────────────────────┐ ┌──────────────────────┐ ┌──────────────────────┐ ┌──────────────────────┐
-   │ harvest/             │ │ harvest/             │ │ harvest/             │ │ harvest/             │
-   │ sessions.jsonl       │ │ tokenharbor_keys.json│ │ tokenmix_keys.jsonl  │ │ grok_accounts.txt    │
-   └───────────┬──────────┘ └──────────┬───────────┘ └──────────┬───────────┘ └──────────────────────┘
-               │                       │                        │
-               │ Local SSE Shim        │ Direct Provider Node   │ Direct Provider Node
-               │ (:8787)               │ & Model Sync (20+ IDs) │ & Model Sync (22+ IDs)
-               ▼                       ▼                        ▼
+   │  ┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐  │
+   │  │  ZeroTwoCreator  │ │TokenHarborCreator│ │ TokenMixCreator  │ │ElevenLabsCreator │ │   GrokCreator    │  │
+   │  │ (app.zerotwo.ai) │ │ (tokenharbor.ai) │ │  (tokenmix.ai)   │ │ (elevenlabs.io)  │ │ (accounts.x.ai)  │  │
+   │  └────────┬─────────┘ └────────┬─────────┘ └────────┬─────────┘ └────────┬─────────┘ └────────┬─────────┘  │
+   └───────────┼────────────────────┼────────────────────┼────────────────────┼────────────────────┼────────────┘
+               │                    │                    │                    │                    │
+               │ Supabase JWT,      │ Live API Keys      │ Live API Keys      │ xi-api-key (10k    │ Session Tokens
+               │ Cookies & CSRF     │ (thk_live_...)     │ (sk-tm-...)        │ free characters)   │ & Credentials
+               ▼                    ▼                    ▼                    ▼                    ▼
+   ┌──────────────────────┐ ┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐
+   │ harvest/             │ │ harvest/         │ │ harvest/         │ │ harvest/         │ │ harvest/         │
+   │ sessions.jsonl       │ │ tokenharbor_keys │ │ tokenmix_keys    │ │ elevenlabs_keys  │ │ grok_accounts.txt│
+   └───────────┬──────────┘ └────────┬─────────┘ └────────┬─────────┘ └────────┬─────────┘ └──────────────────┘
+               │                     │                    │                    │
+               │ Local SSE Shim      │ Direct Node & Sync │ Direct Node & Sync │ Direct TTS Node
+               │ (:8787)             │ (20+ Model IDs)    │ (22+ Model IDs)    │ & Models Sync
+               ▼                     ▼                    ▼                    ▼
    ┌───────────────────────────────────────────────────────────────────────────────────────────────────────────┐
    │                                            9Router AI GATEWAY                                             │
-   │                             (Multi-Account Load Balancing & Unified OpenAI Endpoint)                      │
+   │                             (Multi-Account Load Balancing & Unified AI Endpoint)                          │
    └───────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -95,16 +96,17 @@ flowchart TD
     end
 
     subgraph Automation["2. Automation & Bot Bypass (CDP :9222)"]
-        CDP["Brave / Chrome CDP Controller"]
+        CDP["Auto-CDP: Brave / Chrome Controller (Port :9222)"]
         REACT["Native Input & React _valueTracker Sync"]
         TURN["Cloudflare Turnstile Detection & Auto-Solver"]
-        MAIL["mail.tm Hydra API (Disposable Mailboxes)"]
+        MAIL["mail.tm Hydra API / Optional IMAP Catch-All"]
     end
 
     subgraph Harvesters["3. Multi-Target Harvesting"]
         ZT["ZeroTwo (app.zerotwo.ai)"]
         TH["Token Harbor (tokenharbor.ai)"]
         TM["TokenMix (tokenmix.ai)"]
+        EL["ElevenLabs (elevenlabs.io)"]
         GK["Grok xAI (accounts.x.ai)"]
     end
 
@@ -112,12 +114,13 @@ flowchart TD
         L_ZT[("harvest/sessions.jsonl")]
         L_TH[("harvest/tokenharbor_keys.jsonl")]
         L_TM[("harvest/tokenmix_keys.jsonl")]
+        L_EL[("harvest/elevenlabs_keys.jsonl & .txt")]
         L_GK[("harvest/grok_accounts.txt")]
     end
 
     subgraph Gateway["5. 9Router AI Gateway Integration"]
         SHIM["ZeroTwo OpenAI Shim (:8787)"]
-        ROUTER["9Router AI Gateway\n(Unified OpenAI API & Account Pooling)"]
+        ROUTER["9Router AI Gateway\n(Unified OpenAI & TTS API Endpoint)"]
     end
 
     Routing --> Automation
@@ -126,11 +129,13 @@ flowchart TD
     ZT -->|Supabase JWT & Cookies| L_ZT
     TH -->|thk_live_... API Keys| L_TH
     TM -->|sk-tm-... API Keys| L_TM
+    EL -->|xi-api-key Free Tier| L_EL
     GK -->|Credentials & Cookies| L_GK
 
     L_ZT --> SHIM --> ROUTER
     L_TH -->|Direct Node + Models Sync| ROUTER
     L_TM -->|Direct Node + Models Sync| ROUTER
+    L_EL -->|Direct Node + TTS Models Sync| ROUTER
 ```
 
 ### Architecture Flow Explained
@@ -176,18 +181,11 @@ pip install -e ".[shim]"
 
 ## Quickstart
 
-### 1. Launch a browser with remote debugging (CDP)
+### 1. Browser CDP (Auto-Started)
 
-Launch Chromium, Google Chrome, or Brave Browser with debugging enabled:
+`llm-harvester` automatically detects and launches your local Chromium, Google Chrome, or Brave Browser with remote debugging enabled on port `9222`. You do **not** need to manually run an external launch script or configure websocket URLs.
 
-```bash
-# Recommended: Auto-launches Brave/Chrome and fills LLM_CDP_WS in .env automatically:
-./start-browser.sh
-# Or run in background:
-./start-browser.sh --bg
-```
-
-Or manually:
+If you prefer to start your browser manually beforehand:
 
 ```bash
 # Brave
@@ -197,7 +195,7 @@ brave-browser --remote-debugging-port=9222 --user-data-dir=./chrome-data
 google-chrome --remote-debugging-port=9222 --user-data-dir=./chrome-data
 ```
 
-*(Note: `llm-harvester` also automatically auto-detects running browsers on port 9222 and updates `.env` dynamically!)*
+*(Note: `llm-harvester` automatically auto-detects running browsers on port 9222 and updates `.env` dynamically!)*
 
 ### 2. Configure `.env` or `config.toml`
 
@@ -207,12 +205,12 @@ Copy `.env.example` to `.env`:
 cp .env.example .env
 ```
 
-#### A. General Configuration (Token Harbor, TokenMix & ZeroTwo)
+#### A. General Configuration (Token Harbor, TokenMix, ElevenLabs & ZeroTwo)
 These settings are used across all platforms:
 
 ```env
-# Browser CDP (Local Chromium/Chrome/Brave on port 9222)
-LLM_CDP_WS=ws://127.0.0.1:9222/devtools/browser/<id>
+# Browser CDP (Auto-detected & auto-started on port 9222; only set for remote/cloud CDP)
+# LLM_CDP_WS=ws://127.0.0.1:9222/devtools/browser/<id>
 
 # 9Router AI Gateway (Local http://localhost:20128 or Remote https://nine.yourdomain.com)
 NINEROUTER_URL=https://nine.hazz.biz.id
@@ -222,8 +220,9 @@ NINEROUTER_PASSWORD=your_dashboard_password
 ```
 
 > [!TIP]
-> **Farming Token Harbor or TokenMix?**  
-> That's all you need! Both platforms output native OpenAI-compatible API keys (`thk_live_...` and `sk-tm-...`) and connect directly to cloud APIs. **No VPS, no local shim, and no port 8787 required.** You can start harvesting immediately!
+> **Farming Token Harbor, TokenMix, or ElevenLabs?**  
+> That's all you need! These platforms output native API keys (`thk_live_...`, `sk-tm-...`, and `xi-api-key`) and connect directly to cloud APIs. **No VPS, no local shim, and no port 8787 required.** You can start harvesting immediately!
+> For ElevenLabs, email verification is performed automatically via `mail.tm` by default, or you can optionally configure `IMAP_USER`, `IMAP_PASSWORD`, and `IMAP_ENABLED=true` in `.env` for custom catch-all domains.
 
 #### B. ZeroTwo-Specific Configuration (Requires Shim & Local/VPS Setup)
 Because ZeroTwo uses Supabase JWTs and session cookies instead of standard API keys, it requires the OpenAI-compatible translation shim (`:8787`):
@@ -240,17 +239,22 @@ LLM_SHIM_BASE_URL=http://localhost:8787/v1
 
 ### 3. Create & Harvest Accounts
 
-#### A. Interactive Selection (Prompt)
-Simply run without arguments to choose interactively:
+#### A. Interactive TUI Menu (`./main.py`)
+Run the terminal dashboard:
+```bash
+./main.py
+```
+Or use the CLI interactive prompt:
 ```bash
 llm-harvester run
 ```
 ```text
-Target platform farming:
-  [1] ZeroTwo (Browser CDP + Mail.tm -> 9Router)
-  [2] Token Harbor (Mail.tm + thk_live_... API key)
-  [3] TokenMix (Browser CDP + Mail.tm + sk-tm-... API key)
-Choice [1-3] (default 1):
+Select farming target:
+  [1] ZeroTwo      (app.zerotwo.ai)    -> JWT Session, Cookies, 9Router
+  [2] Token Harbor (tokenharbor.ai)    -> API Key (thk_live_...), mail.tm
+  [3] TokenMix     (tokenmix.ai)       -> API Key (sk-tm-...), mail.tm
+  [4] ElevenLabs   (elevenlabs.io)     -> API Key (xi-api-key), mail.tm / IMAP
+Choice [1-4] (default 1):
 ```
 
 #### B. Direct Target Flag
@@ -260,6 +264,9 @@ llm-harvester run --target tokenharbor --count 5
 
 # Farm 3 TokenMix accounts (direct API keys -> 9Router + models synced)
 llm-harvester run --target tokenmix --count 3
+
+# Farm 2 ElevenLabs accounts (10,000 free chars each -> 9Router + TTS models synced)
+llm-harvester run --target elevenlabs --count 2
 
 # Farm 2 ZeroTwo accounts (harvests sessions -> 9Router via shim)
 llm-harvester run --target zerotwo --count 2

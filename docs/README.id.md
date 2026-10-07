@@ -21,7 +21,7 @@
 
 ## Apa yang dilakukannya
 
-1. **Multi-Target Farming**: Mendukung **ZeroTwo** (`app.zerotwo.ai`), **Token Harbor** (`tokenharbor.ai`), **TokenMix** (`api.tokenmix.ai`), dan **Grok xAI** (`accounts.x.ai`) dengan menu interaktif atau flag CLI langsung.
+1. **Multi-Target Farming**: Mendukung **ZeroTwo** (`app.zerotwo.ai`), **Token Harbor** (`tokenharbor.ai`), **TokenMix** (`api.tokenmix.ai`), **ElevenLabs** (`elevenlabs.io`), dan **Grok xAI** (`accounts.x.ai`) dengan menu interaktif atau flag CLI langsung.
 2. **Dashboard Interaktif TUI (`./main.py`)**: Antarmuka terminal interaktif lengkap dengan diagnosis kesiapan sistem, tabel status real-time, dan menu eksekusi satu klik pada 7 modul utama.
 3. **Pilihan Routing Jaringan Fleksibel (Direct secara Default)**:
    - **Direct Connection (Default)**: Menggunakan koneksi ISP residensial lokal langsung tanpa proxy, memberikan skor reputasi manusia tertinggi di Cloudflare Turnstile.
@@ -29,15 +29,16 @@
    - **Proxy Pool**: Rotasi IP otomatis via `proxies.txt` atau proxy residensial Webshare saat melakukan panen dalam jumlah besar.
 4. **Webshare Residential Hunter**: Modul pencari proxy residensial otomatis berbasis AI audio captcha solver (Google SpeechRecognition / CapSolver).
 5. **Otomasi CDP & Anti-Bot Handal**:
-   - Pengetikan native CDP (`Input.insertText`) + sinkronisasi `_valueTracker` React untuk mencegah nilai form kosong pada form Next.js / React.
+   - Pengetikan native CDP (`Input.insertText`) + Sinkronisasi `_valueTracker` React untuk mencegah nilai form kosong pada form Next.js / React.
    - Deteksi dan penyelesaian otomatis tantangan Cloudflare Turnstile.
    - Penyesuaian mode tampilan otomatis (jendela browser terlihat saat Turnstile aktif).
 6. **Panen Kredensial & Integrasi Otomatis 9Router**:
    - **Token Harbor**: Mengambil API key dashboard (`thk_live_...`), menyinkronkan 20+ model ID, dan otomatis terdaftar sebagai provider node OpenAI di **9Router**.
    - **TokenMix**: Mengambil API key dashboard (`sk-tm-...`), menyinkronkan 22+ model ID, dan otomatis terdaftar sebagai provider node OpenAI di **9Router**.
+   - **ElevenLabs**: Menghasilkan `xi-api-key` (10.000 karakter kuota gratis), bypass onboarding wizard, verifikasi email via `mail.tm` atau IMAP catch-all, serta sinkronisasi model suara TTS ke **9Router**.
    - **ZeroTwo**: Mengambil JWT Supabase, cookie (`cf_clearance`, `__csrf`), token CSRF, dan terhubung ke **9Router** via OpenAI shim lokal.
    - **Grok xAI**: Otomasi pembuatan akun dengan rotasi proxy residensial dan auto-OTP.
-7. **Output Ledger Crash-Safe**: Menyimpan seluruh hasil panen ke berkas JSONL append-only (`sessions.jsonl`, `tokenharbor_keys.jsonl`, `tokenmix_keys.jsonl`, `grok_accounts.txt`).
+7. **Output Ledger Crash-Safe**: Menyimpan seluruh hasil panen ke berkas JSONL append-only (`sessions.jsonl`, `tokenharbor_keys.jsonl`, `tokenmix_keys.jsonl`, `elevenlabs_keys.jsonl`, `elevenlabs_keys.txt`, `grok_accounts.txt`).
 
 ## Arsitektur
 
@@ -54,35 +55,35 @@
                                          ▼
    ┌───────────────────────────────────────────────────────────────────────────────────────────────────────────┐
    │                                     OTOMASI BROWSER & IDENTITAS (CDP :9222)                               │
-   │  • Browser Brave / Chromium / Chrome (CDP Port 9222)                                                      │
+   │  • Auto-CDP: Browser Brave / Chromium / Chrome (Port :9222, otomatis tanpa start-browser.sh)              │
    │  • Pengetikan Native CDP (`Input.insertText`) + Sinkronisasi State React `_valueTracker`                  │
    │  • Deteksi & Auto-Solver Cloudflare Turnstile                                                             │
-   │  • mail.tm Hydra REST API (Email Sementara, Magic Link & Ekstraksi OTP)                                   │
+   │  • mail.tm Hydra REST API & Listener Opsional IMAP Catch-All                                              │
    └─────────────────────────────────────┬─────────────────────────────────────────────────────────────────────┘
                                          │ Mengorkestrasi Registrasi Akun
                                          ▼
    ┌───────────────────────────────────────────────────────────────────────────────────────────────────────────┐
    │                                      MODUL PANEN MULTI-PLATFORM                                           │
-   │  ┌──────────────────┐    ┌──────────────────┐    ┌──────────────────┐    ┌──────────────────┐             │
-   │  │  ZeroTwoCreator  │    │TokenHarborCreator│    │ TokenMixCreator  │    │   GrokCreator    │             │
-   │  │ (app.zerotwo.ai) │    │ (tokenharbor.ai) │    │  (tokenmix.ai)   │    │ (accounts.x.ai)  │             │
-   │  └────────┬─────────┘    └────────┬─────────┘    └────────┬─────────┘    └────────┬─────────┘             │
-   └───────────┼───────────────────────┼───────────────────────┼───────────────────────┼───────────────────────┘
-               │                       │                       │                       │
-               │ Supabase JWT,         │ API Key Dashboard     │ API Key Dashboard     │ Token Sesi &          │
-               │ Cookie & Token CSRF   │ (thk_live_...)        │ (sk-tm-...)           │ Kredensial Auth       │
-               ▼                       ▼                       ▼                       ▼
-   ┌──────────────────────┐ ┌──────────────────────┐ ┌──────────────────────┐ ┌──────────────────────┐
-   │ harvest/             │ │ harvest/             │ │ harvest/             │ │ harvest/             │
-   │ sessions.jsonl       │ │ tokenharbor_keys.json│ │ tokenmix_keys.jsonl  │ │ grok_accounts.txt    │
-   └───────────┬──────────┘ └──────────┬───────────┘ └──────────┬───────────┘ └──────────────────────┘
-               │                       │                        │
-               │ Local SSE Shim        │ Node Provider Langsung │ Node Provider Langsung
-               │ (:8787)               │ & Sinkronisasi 20+ Mod.│ & Sinkronisasi 22+ Mod.
-               ▼                       ▼                        ▼
+   │  ┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐  │
+   │  │  ZeroTwoCreator  │ │TokenHarborCreator│ │ TokenMixCreator  │ │ElevenLabsCreator │ │   GrokCreator    │  │
+   │  │ (app.zerotwo.ai) │ │ (tokenharbor.ai) │ │  (tokenmix.ai)   │ │ (elevenlabs.io)  │ │ (accounts.x.ai)  │  │
+   │  └────────┬─────────┘ └────────┬─────────┘ └────────┬─────────┘ └────────┬─────────┘ └────────┬─────────┘  │
+   └───────────┼────────────────────┼────────────────────┼────────────────────┼────────────────────┼────────────┘
+               │                    │                    │                    │                    │
+               │ Supabase JWT,      │ API Key Dashboard  │ API Key Dashboard  │ xi-api-key (10k    │ Token Sesi &
+               │ Cookie & Token CSRF│ (thk_live_...)     │ (sk-tm-...)        │ karakter gratis)   │ Kredensial Auth
+               ▼                    ▼                    ▼                    ▼                    ▼
+   ┌──────────────────────┐ ┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐
+   │ harvest/             │ │ harvest/         │ │ harvest/         │ │ harvest/         │ │ harvest/         │
+   │ sessions.jsonl       │ │ tokenharbor_keys │ │ tokenmix_keys    │ │ elevenlabs_keys  │ │ grok_accounts.txt│
+   └───────────┬──────────┘ └────────┬─────────┘ └────────┬─────────┘ └────────┬─────────┘ └──────────────────┘
+               │                     │                    │                    │
+               │ Local SSE Shim      │ Node Langsung &    │ Node Langsung &    │ Node Provider TTS
+               │ (:8787)             │ Sinkronisasi Mod.  │ Sinkronisasi Mod.  │ & Sinkronisasi Mod.
+               ▼                     ▼                    ▼                    ▼
    ┌───────────────────────────────────────────────────────────────────────────────────────────────────────────┐
    │                                            AI GATEWAY 9Router                                             │
-   │                          (Load Balancing Multi-Akun & Endpoint Tunggal Kompatibel OpenAI)                 │
+   │                          (Load Balancing Multi-Akun & Endpoint Tunggal AI Terpadu)                        │
    └───────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -95,16 +96,17 @@ flowchart TD
     end
 
     subgraph Automation["2. Otomasi Browser & Anti-Bot (CDP :9222)"]
-        CDP["Brave / Chrome CDP Controller"]
+        CDP["Auto-CDP: Brave / Chrome Controller (Port :9222)"]
         REACT["Pengetikan Native CDP & Sinkronisasi React _valueTracker"]
         TURN["Deteksi & Auto-Solver Cloudflare Turnstile"]
-        MAIL["mail.tm Hydra API (Kotak Surat Sekali Pakai)"]
+        MAIL["mail.tm Hydra API / Opsional IMAP Catch-All"]
     end
 
     subgraph Harvesters["3. Modul Panen Multi-Platform"]
         ZT["ZeroTwo (app.zerotwo.ai)"]
         TH["Token Harbor (tokenharbor.ai)"]
         TM["TokenMix (tokenmix.ai)"]
+        EL["ElevenLabs (elevenlabs.io)"]
         GK["Grok xAI (accounts.x.ai)"]
     end
 
@@ -112,12 +114,13 @@ flowchart TD
         L_ZT[("harvest/sessions.jsonl")]
         L_TH[("harvest/tokenharbor_keys.jsonl")]
         L_TM[("harvest/tokenmix_keys.jsonl")]
+        L_EL[("harvest/elevenlabs_keys.jsonl & .txt")]
         L_GK[("harvest/grok_accounts.txt")]
     end
 
     subgraph Gateway["5. Integrasi AI Gateway 9Router"]
         SHIM["OpenAI Translation Shim (:8787)"]
-        ROUTER["9Router AI Gateway\n(Endpoint Terpadu OpenAI & Pooling Akun)"]
+        ROUTER["9Router AI Gateway\n(Endpoint Terpadu OpenAI & TTS)"]
     end
 
     Routing --> Automation
@@ -126,11 +129,13 @@ flowchart TD
     ZT -->|Supabase JWT & Cookie| L_ZT
     TH -->|API Key thk_live_...| L_TH
     TM -->|API Key sk-tm-...| L_TM
+    EL -->|xi-api-key Kuota Gratis| L_EL
     GK -->|Kredensial & Sesi| L_GK
 
     L_ZT --> SHIM --> ROUTER
     L_TH -->|Node Langsung + Sinkronisasi Model| ROUTER
     L_TM -->|Node Langsung + Sinkronisasi Model| ROUTER
+    L_EL -->|Node Langsung + Sinkronisasi Model TTS| ROUTER
 ```
 
 ### Penjelasan Alur Arsitektur
@@ -175,18 +180,11 @@ pip install -e ".[shim]"
 
 ## Mulai Cepat
 
-### 1. Jalankan browser dengan remote debugging (CDP)
+### 1. Browser CDP (Otomatis Dijalankan)
 
-Jalankan Chromium, Google Chrome, atau Brave Browser dengan port debugging aktif:
+`llm-harvester` secara otomatis mendeteksi dan menjalankan Chromium, Google Chrome, atau Brave Browser lokal Anda dengan mode remote debugging aktif pada port `9222`. Anda **tidak** perlu menjalankan skrip peluncur manual atau menyalin URL websocket secara manual.
 
-```bash
-# Direkomendasikan: Otomatis menjalankan browser dan mengisi LLM_CDP_WS di .env:
-./start-browser.sh
-# Atau jalan di background:
-./start-browser.sh --bg
-```
-
-Atau jalankan secara manual:
+Jika Anda ingin menjalankan browser secara manual terlebih dahulu:
 
 ```bash
 # Brave Browser
@@ -196,7 +194,7 @@ brave-browser --remote-debugging-port=9222 --user-data-dir=./chrome-data
 google-chrome --remote-debugging-port=9222 --user-data-dir=./chrome-data
 ```
 
-*(Catatan: `llm-harvester` juga otomatis mendeteksi browser aktif di port 9222 dan memperbarui `.env` secara dinamis!)*
+*(Catatan: `llm-harvester` secara otomatis mendeteksi browser aktif pada port 9222 dan memperbarui `.env` secara dinamis!)*
 
 ### 2. Konfigurasi `.env` atau `config.toml`
 
@@ -206,12 +204,12 @@ Salin `.env.example` ke `.env`:
 cp .env.example .env
 ```
 
-#### A. Konfigurasi Umum (Token Harbor, TokenMix & ZeroTwo)
+#### A. Konfigurasi Umum (Token Harbor, TokenMix, ElevenLabs & ZeroTwo)
 Pengaturan ini digunakan untuk semua platform:
 
 ```env
-# Browser CDP (Chromium/Chrome/Brave lokal pada port 9222)
-LLM_CDP_WS=ws://127.0.0.1:9222/devtools/browser/<id>
+# Browser CDP (Otomatis dideteksi & dijalankan di port 9222; hanya diset untuk remote/cloud CDP)
+# LLM_CDP_WS=ws://127.0.0.1:9222/devtools/browser/<id>
 
 # AI Gateway 9Router (Bisa lokal http://localhost:20128 atau remote https://nine.domainanda.com)
 NINEROUTER_URL=https://nine.hazz.biz.id
@@ -221,8 +219,9 @@ NINEROUTER_PASSWORD=password_dasbor_anda
 ```
 
 > [!TIP]
-> **Hanya Farming Token Harbor atau TokenMix?**  
-> Cukup konfigurasi di atas! Kedua platform ini menghasilkan API key mandiri standar OpenAI (`thk_live_...` dan `sk-tm-...`) dan langsung memanggil cloud upstream. **Tidak memerlukan VPS, tidak memerlukan shim lokal, dan tidak membutuhkan port 8787.** Anda bisa langsung mulai farming di komputer lokal!
+> **Farming Token Harbor, TokenMix, atau ElevenLabs?**  
+> Cukup konfigurasi di atas! Ketiga platform ini menghasilkan API key mandiri (`thk_live_...`, `sk-tm-...`, dan `xi-api-key`) dan langsung terhubung ke cloud upstream. **Tidak memerlukan VPS, tidak memerlukan shim lokal, dan tidak membutuhkan port 8787.** Anda bisa langsung mulai farming di komputer lokal!
+> Untuk ElevenLabs, verifikasi email otomatis menggunakan `mail.tm` secara default, atau Anda dapat mengatur `IMAP_USER`, `IMAP_PASSWORD`, dan `IMAP_ENABLED=true` pada `.env` jika menggunakan domain catch-all kustom.
 
 #### B. Konfigurasi Khusus ZeroTwo (Memerlukan Shim & Opsi VPS)
 Karena ZeroTwo menggunakan session JWT Supabase dan cookie sesi (bukan API key standar), dibutuhkan shim penerjemah OpenAI (`:8787`):
@@ -239,17 +238,22 @@ LLM_SHIM_BASE_URL=http://localhost:8787/v1
 
 ### 3. Buat dan Panen Akun
 
-#### A. Menu Interaktif (Prompt)
-Jalankan tanpa opsi untuk memilih platform secara interaktif:
+#### A. Menu Interaktif TUI (`./main.py`)
+Jalankan dashboard terminal:
+```bash
+./main.py
+```
+Atau prompt interaktif CLI:
 ```bash
 llm-harvester run
 ```
 ```text
-Target platform farming:
-  [1] ZeroTwo (Browser CDP + Mail.tm -> 9Router)
-  [2] Token Harbor (Mail.tm + thk_live_... API key)
-  [3] TokenMix (Browser CDP + Mail.tm + sk-tm-... API key)
-Choice [1-3] (default 1):
+Pilih target farming:
+  [1] ZeroTwo      (app.zerotwo.ai)    -> JWT Session, Cookies, 9Router
+  [2] Token Harbor (tokenharbor.ai)    -> API Key (thk_live_...), mail.tm
+  [3] TokenMix     (tokenmix.ai)       -> API Key (sk-tm-...), mail.tm
+  [4] ElevenLabs   (elevenlabs.io)     -> API Key (xi-api-key), mail.tm / IMAP
+Pilihan [1-4] (default 1):
 ```
 
 #### B. Langsung via Flag Target
@@ -259,6 +263,9 @@ llm-harvester run --target tokenharbor --count 5
 
 # Panen 3 akun TokenMix (API key langsung -> 9Router + sinkronisasi model)
 llm-harvester run --target tokenmix --count 3
+
+# Panen 2 akun ElevenLabs (10.000 karakter gratis per akun -> 9Router + model TTS)
+llm-harvester run --target elevenlabs --count 2
 
 # Panen 2 akun ZeroTwo (sesi -> 9Router via shim)
 llm-harvester run --target zerotwo --count 2

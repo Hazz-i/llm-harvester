@@ -16,6 +16,7 @@ from typing import Any
 from .catalog import fetch_provider_models, get_default_models
 from .cdp import BridgeCDP, HttpCDP, LocalCDP
 from .config import HarvesterConfig
+from .elevenlabs import ElevenLabsCreator
 from .mail import MailProvider
 from .router9 import NineRouterClient
 from .tokenharbor import TokenHarborCreator
@@ -66,6 +67,8 @@ class Harvester:
             ledger_name = "tokenharbor_keys.jsonl"
         elif target == "tokenmix":
             ledger_name = "tokenmix_keys.jsonl"
+        elif target == "elevenlabs":
+            ledger_name = "elevenlabs_keys.jsonl"
         return Ledger(Path(self.config.output_dir) / ledger_name)
 
     async def _make_cdp(self, proxy: str | None = None) -> Any:
@@ -232,6 +235,61 @@ class Harvester:
                     except Exception:  # noqa: BLE001
                         pass
 
+        if cfg.target == "elevenlabs":
+            cdp = await self._make_cdp(proxy)
+            try:
+                creator = ElevenLabsCreator(cdp, mail, config=cfg.elevenlabs, log=self.log)
+                res = await creator.create_account()
+                record = res.as_dict()
+                record["index"] = index
+                record["finished_at"] = time.time()
+                if res.api_key:
+                    keys_txt = Path(self.config.output_dir) / "elevenlabs_keys.txt"
+                    try:
+                        existing_keys = set(keys_txt.read_text().splitlines()) if keys_txt.exists() else set()
+                        if res.api_key not in existing_keys:
+                            with keys_txt.open("a", encoding="utf-8") as kf:
+                                kf.write(res.api_key + "\n")
+                    except Exception:
+                        pass
+                if router is not None and res.ok and cfg.router.enabled:
+                    models = await fetch_provider_models("elevenlabs", res.api_key, cfg.elevenlabs.api_base)
+                    record["models"] = [m["id"] for m in models]
+                    if node_id:
+                        await router.sync_custom_models(node_id, models)
+                    r_res = await router.connect_session(
+                        email=res.email,
+                        access_token=res.api_key,
+                        node_id=node_id,
+                        node_prefix=cfg.elevenlabs.node_prefix,
+                        extra={
+                            "base_url": cfg.elevenlabs.api_base,
+                            "node_name": cfg.elevenlabs.node_name,
+                            "display_name": "ElevenLabs",
+                            "account_type": "elevenlabs",
+                            "api_type": "tts",
+                        },
+                    )
+                    record["router"] = asdict(r_res)
+                    self.log(f"[{index}] 9router: {'ok' if r_res.ok else r_res.message} ({len(record['models'])} models)")
+                self.ledger.append(record)
+                return record
+            finally:
+                launcher = getattr(cdp, "_launcher", None)
+                if launcher and hasattr(launcher, "stop"):
+                    try:
+                        res_stop = launcher.stop()
+                        if asyncio.iscoroutine(res_stop):
+                            await res_stop
+                    except Exception:  # noqa: BLE001
+                        pass
+                close = getattr(cdp, "close", None)
+                if close:
+                    try:
+                        await close()
+                    except Exception:  # noqa: BLE001
+                        pass
+
         account: dict[str, Any] = {"index": index, "started_at": time.time()}
         mailbox = None
         session: HarvestedSession | None = None
@@ -312,7 +370,7 @@ class Harvester:
 
         router: NineRouterClient | None = None
         node_id: str | None = None
-        if cfg.router.enabled and cfg.target in ("zerotwo", "tokenharbor", "tokenmix"):
+        if cfg.router.enabled and cfg.target in ("zerotwo", "tokenharbor", "tokenmix", "elevenlabs"):
             router = NineRouterClient(
                 cfg.router.base_url,
                 api_key=cfg.router.api_key,
@@ -339,6 +397,15 @@ class Harvester:
                     )
                     if node_id:
                         await router.sync_custom_models(node_id, get_default_models("tokenmix"))
+                elif cfg.target == "elevenlabs":
+                    node_id = await router.ensure_node(
+                        name=cfg.elevenlabs.node_name,
+                        base_url=cfg.elevenlabs.api_base,
+                        prefix=cfg.elevenlabs.node_prefix,
+                        api_type="tts",
+                    )
+                    if node_id:
+                        await router.sync_custom_models(node_id, get_default_models("elevenlabs"))
                 else:
                     node_id = await router.ensure_node(
                         name=cfg.router.node_name,

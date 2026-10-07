@@ -56,6 +56,16 @@ TOKENMIX_MODELS: list[dict[str, Any]] = [
 ]
 
 
+# ElevenLabs audio & voice models (native endpoint: https://api.elevenlabs.io/v1)
+ELEVENLABS_MODELS: list[dict[str, Any]] = [
+    {"id": "eleven_multilingual_v2", "name": "Eleven Multilingual v2", "provider": "elevenlabs", "type": "tts"},
+    {"id": "eleven_turbo_v2_5", "name": "Eleven Turbo v2.5", "provider": "elevenlabs", "type": "tts"},
+    {"id": "eleven_flash_v2_5", "name": "Eleven Flash v2.5", "provider": "elevenlabs", "type": "tts"},
+    {"id": "eleven_multilingual_v1", "name": "Eleven Multilingual v1", "provider": "elevenlabs", "type": "tts"},
+    {"id": "eleven_monolingual_v1", "name": "Eleven Monolingual v1", "provider": "elevenlabs", "type": "tts"},
+]
+
+
 def get_default_models(platform: str) -> list[dict[str, Any]]:
     """Return default curated model catalog for the given platform."""
     p = platform.lower()
@@ -63,6 +73,8 @@ def get_default_models(platform: str) -> list[dict[str, Any]]:
         return list(TOKENHARBOR_MODELS)
     if p in ("tokenmix", "token-mix", "tm"):
         return list(TOKENMIX_MODELS)
+    if p in ("elevenlabs", "eleven-labs", "el"):
+        return list(ELEVENLABS_MODELS)
     if p in ("zerotwo", "zero-two", "zt"):
         return list(ZEROTWO_MODELS)
     return []
@@ -84,13 +96,15 @@ async def fetch_provider_models(
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
+    if platform.lower() in ("elevenlabs", "eleven-labs", "el"):
+        headers["xi-api-key"] = api_key
 
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
             resp = await client.get(url, headers=headers)
             if resp.status_code == 200:
                 data = resp.json()
-                items = data.get("data") if isinstance(data, dict) else data
+                items = data.get("data") if isinstance(data, dict) else (data.get("models") if isinstance(data, dict) else data)
                 if isinstance(items, list) and items:
                     models = []
                     seen = set()
@@ -98,8 +112,10 @@ async def fetch_provider_models(
                     th_allowed = {m["id"] for m in TOKENHARBOR_MODELS}
 
                     for item in items:
-                        if isinstance(item, dict) and "id" in item:
-                            mid = item["id"]
+                        if isinstance(item, dict):
+                            mid = item.get("id") or item.get("model_id")
+                            if not mid:
+                                continue
                             if is_tokenharbor and mid not in th_allowed and not mid.endswith(":free"):
                                 continue
                             if mid not in seen:
@@ -107,14 +123,14 @@ async def fetch_provider_models(
                                 models.append({
                                     "id": mid,
                                     "name": item.get("name") or mid,
-                                    "type": "llm",
+                                    "type": "tts" if platform.lower() in ("elevenlabs", "el") else "llm",
                                 })
                         elif isinstance(item, str):
                             if is_tokenharbor and item not in th_allowed and not item.endswith(":free"):
                                 continue
                             if item not in seen:
                                 seen.add(item)
-                                models.append({"id": item, "name": item, "type": "llm"})
+                                models.append({"id": item, "name": item, "type": "tts" if platform.lower() in ("elevenlabs", "el") else "llm"})
                     if models:
                         return models
     except Exception:

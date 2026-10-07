@@ -44,6 +44,22 @@ class TokenMixConfig:
     node_prefix: str = "tokenmix"
 
 
+@dataclass
+class ElevenLabsConfig:
+    key_name_prefix: str = "prod-el"
+    wait_seconds: float = 120.0
+    max_retries: int = 2
+    api_base: str = "https://api.elevenlabs.io/v1"
+    node_name: str = "ElevenLabs"
+    node_prefix: str = "elevenlabs"
+    imap_enabled: bool = False
+    imap_host: str = "imap.gmail.com"
+    imap_port: int = 993
+    imap_user: str | None = None
+    imap_password: str | None = None
+    email_domain: str | None = None
+
+
 
 @dataclass
 class RouterConfig:
@@ -87,11 +103,12 @@ class ProxyConfig:
 
 @dataclass
 class HarvesterConfig:
-    target: str = "select"  # select | zerotwo | tokenharbor | tokenmix
+    target: str = "select"  # select | zerotwo | tokenharbor | tokenmix | elevenlabs
     mail: MailConfig = field(default_factory=MailConfig)
     zerotwo: ZeroTwoConfig = field(default_factory=ZeroTwoConfig)
     tokenharbor: TokenHarborConfig = field(default_factory=TokenHarborConfig)
     tokenmix: TokenMixConfig = field(default_factory=TokenMixConfig)
+    elevenlabs: ElevenLabsConfig = field(default_factory=ElevenLabsConfig)
     router: RouterConfig = field(default_factory=RouterConfig)
     browser: BrowserConfig = field(default_factory=BrowserConfig)
     proxy: ProxyConfig = field(default_factory=ProxyConfig)
@@ -132,6 +149,16 @@ class HarvesterConfig:
         cfg.tokenmix.node_name = os.getenv("TM_NODE_NAME", cfg.tokenmix.node_name)
         cfg.tokenmix.node_prefix = os.getenv("TM_NODE_PREFIX", cfg.tokenmix.node_prefix)
         cfg.tokenmix.referral_code = os.getenv("TM_REFERRAL") or cfg.tokenmix.referral_code
+        cfg.elevenlabs.key_name_prefix = os.getenv("EL_KEY_PREFIX", cfg.elevenlabs.key_name_prefix)
+        cfg.elevenlabs.api_base = os.getenv("EL_API_BASE", cfg.elevenlabs.api_base)
+        cfg.elevenlabs.node_name = os.getenv("EL_NODE_NAME", cfg.elevenlabs.node_name)
+        cfg.elevenlabs.node_prefix = os.getenv("EL_NODE_PREFIX", cfg.elevenlabs.node_prefix)
+        cfg.elevenlabs.imap_user = os.getenv("IMAP_USER") or None
+        cfg.elevenlabs.imap_password = os.getenv("IMAP_PASSWORD") or None
+        cfg.elevenlabs.imap_host = os.getenv("IMAP_HOST", cfg.elevenlabs.imap_host)
+        if os.getenv("IMAP_ENABLED", "").lower() in ("1", "true", "yes"):
+            cfg.elevenlabs.imap_enabled = True
+        cfg.elevenlabs.email_domain = os.getenv("EMAIL_DOMAIN") or None
         cfg.router.base_url = os.getenv("NINEROUTER_URL", cfg.router.base_url)
         cfg.router.api_key = os.getenv("NINEROUTER_API_KEY", cfg.router.api_key)
         cfg.router.password = os.getenv("NINEROUTER_PASSWORD") or None

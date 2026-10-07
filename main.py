@@ -67,16 +67,22 @@ def _get_proxy_count() -> int:
 
 
 def _get_harvest_summary() -> dict[str, int]:
-    res = {"zerotwo": 0, "tokenharbor": 0, "tokenmix": 0, "grok": 0}
+    res = {"zerotwo": 0, "tokenharbor": 0, "tokenmix": 0, "elevenlabs": 0, "grok": 0}
     for key, fname in [
         ("zerotwo", "sessions.jsonl"),
         ("tokenharbor", "tokenharbor_keys.jsonl"),
         ("tokenmix", "tokenmix_keys.jsonl"),
+        ("elevenlabs", "elevenlabs_keys.jsonl"),
         ("grok", "grok_accounts.jsonl"),
     ]:
         f = Path("harvest") / fname
         if f.exists():
             res[key] = sum(1 for line in f.read_text().splitlines() if line.strip())
+        elif key == "elevenlabs":
+            for f_alt in [Path("harvest") / "elevenlabs_keys.txt", Path("output") / "elevenlabs_keys.txt"]:
+                if f_alt.exists():
+                    res[key] = sum(1 for line in f_alt.read_text().splitlines() if line.strip())
+                    break
         elif key == "grok":
             for f_alt in [Path("harvest") / "grok_accounts.txt", Path("output") / "grok_accounts.txt"]:
                 if f_alt.exists():
@@ -110,7 +116,7 @@ def render_dashboard() -> None:
     table.add_row("9Router Gateway", f"[cyan]{router_url}[/cyan]", "Auto-Connect Provider")
     table.add_row(
         "Harvest Ledger",
-        f"[magenta]ZT: {harvest_counts['zerotwo']} | TH: {harvest_counts['tokenharbor']} | TM: {harvest_counts['tokenmix']} | Grok: {harvest_counts['grok']}[/magenta]",
+        f"[magenta]ZT: {harvest_counts['zerotwo']} | TH: {harvest_counts['tokenharbor']} | TM: {harvest_counts['tokenmix']} | EL: {harvest_counts['elevenlabs']} | Grok: {harvest_counts['grok']}[/magenta]",
         "harvest/*",
     )
 
@@ -122,15 +128,16 @@ def menu_run_harvester() -> None:
     console.print("Select target platform:")
     console.print("  [1] Token Harbor (tokenharbor.ai - Production API Keys thk_live_...)")
     console.print("  [2] TokenMix     (api.tokenmix.ai - Production API Keys sk-tm_...)")
-    console.print("  [3] ZeroTwo      (app.zerotwo.ai - Intercept Supabase JWT & Cookie)")
-    console.print("  [4] Grok xAI     (accounts.x.ai - Residential Proxy & Auto-OTP)")
+    console.print("  [3] ElevenLabs   (elevenlabs.io - Free Tier xi-api-key 10,000 Chars)")
+    console.print("  [4] ZeroTwo      (app.zerotwo.ai - Intercept Supabase JWT & Cookie)")
+    console.print("  [5] Grok xAI     (accounts.x.ai - Residential Proxy & Auto-OTP)")
     console.print("  [0] Back to main menu\n")
 
-    choice = Prompt.ask("Choice", choices=["1", "2", "3", "4", "0"], default="1")
+    choice = Prompt.ask("Choice", choices=["1", "2", "3", "4", "5", "0"], default="1")
     if choice == "0":
         return
 
-    if choice == "4":
+    if choice == "5":
         menu_grok_farm()
         return
 
@@ -143,12 +150,18 @@ def menu_run_harvester() -> None:
         count = 1
 
     # Token Harbor & ZeroTwo: Cloudflare/Supabase bot-detection breaks in headless mode
-    if choice in ("1", "3"):
+    if choice in ("1", "4"):
         platform_name = "Token Harbor" if choice == "1" else "ZeroTwo"
         console.print(
             f"[yellow dim]ℹ  {platform_name} requires Visible Window (Cloudflare bot-detection).[/yellow dim]"
         )
         is_headless = False
+    elif choice == "3":
+        console.print("\nBrowser Display Mode:")
+        console.print("  [1] Visible Window (Recommended for Cloudflare Turnstile, default)")
+        console.print("  [2] Background / Headless (No UI window)")
+        head_choice = Prompt.ask("Choice", choices=["1", "2"], default="1")
+        is_headless = (head_choice == "2")
     else:
         console.print("\nBrowser Display Mode:")
         console.print("  [1] Visible Window (Easy to monitor, default)")
@@ -165,7 +178,8 @@ def menu_run_harvester() -> None:
     target_map = {
         "1": "tokenharbor",
         "2": "tokenmix",
-        "3": "zerotwo",
+        "3": "elevenlabs",
+        "4": "zerotwo",
     }
     t = target_map.get(choice, "tokenharbor")
 
@@ -433,17 +447,18 @@ def menu_grok_farm() -> None:
 def menu_router_sync() -> None:
     console.print("\n[bold cyan]=== SYNC TO 9ROUTER GATEWAY ===[/bold cyan]")
     console.print("Select data to synchronize with 9Router:")
-    console.print("  [1] All (ZeroTwo, Token Harbor, TokenMix)")
+    console.print("  [1] All (ZeroTwo, Token Harbor, TokenMix, ElevenLabs)")
     console.print("  [2] ZeroTwo Only")
     console.print("  [3] Token Harbor Only")
     console.print("  [4] TokenMix Only")
+    console.print("  [5] ElevenLabs Only")
     console.print("  [0] Cancel")
 
-    choice = Prompt.ask("\nChoice", choices=["1", "2", "3", "4", "0"], default="1")
+    choice = Prompt.ask("\nChoice", choices=["1", "2", "3", "4", "5", "0"], default="1")
     if choice == "0":
         return
 
-    targets = {"1": "all", "2": "zerotwo", "3": "tokenharbor", "4": "tokenmix"}
+    targets = {"1": "all", "2": "zerotwo", "3": "tokenharbor", "4": "tokenmix", "5": "elevenlabs"}
     target = targets.get(choice, "all")
 
     cmd = [sys.executable, "-m", "llmharvester.cli", "sync", "--target", target]
@@ -546,7 +561,7 @@ def main() -> None:
         render_dashboard()
 
         console.print("[bold]MAIN TOOLS MENU:[/bold]")
-        console.print("  [1] Run Harvester (Token Harbor, TokenMix, ZeroTwo, Grok xAI)")
+        console.print("  [1] Run Harvester (Token Harbor, TokenMix, ElevenLabs, ZeroTwo, Grok xAI)")
         console.print("  [2] System Doctor (Readiness Diagnostic)")
         console.print("  [3] Webshare Residential Hunter (AI Audio Solver)")
         console.print("  [4] Check & Test Proxy Pool")

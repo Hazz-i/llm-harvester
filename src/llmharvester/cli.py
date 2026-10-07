@@ -76,6 +76,8 @@ def _resolve_target(explicit_target: str | None, cfg_target: str = "select") -> 
         return "tokenharbor"
     if target_candidate in ("3", "tokenmix", "tm"):
         return "tokenmix"
+    if target_candidate in ("4", "elevenlabs", "el"):
+        return "elevenlabs"
 
     c = _console()
     prompt_text = (
@@ -83,7 +85,8 @@ def _resolve_target(explicit_target: str | None, cfg_target: str = "select") -> 
         "  [cyan][1][/cyan] ZeroTwo      (app.zerotwo.ai)    -> JWT Session, Cookies, 9Router\n"
         "  [cyan][2][/cyan] Token Harbor (tokenharbor.ai)    -> API Key (thk_live_...), mail.tm\n"
         "  [cyan][3][/cyan] TokenMix     (tokenmix.ai)       -> API Key (sk-tm-...), mail.tm\n"
-        "Choice [1-3] (default 1): "
+        "  [cyan][4][/cyan] ElevenLabs   (elevenlabs.io)     -> API Key (xi-api-key), mail.tm / IMAP\n"
+        "Choice [1-4] (default 1): "
     )
     if c:
         c.print(prompt_text, end="")
@@ -98,6 +101,8 @@ def _resolve_target(explicit_target: str | None, cfg_target: str = "select") -> 
         return "tokenharbor"
     if ans in ("3", "tokenmix", "tm"):
         return "tokenmix"
+    if ans in ("4", "elevenlabs", "el"):
+        return "elevenlabs"
     return "zerotwo"
 
 
@@ -107,7 +112,7 @@ if typer is not None:
     @app.command()
     def run(
         count: int = typer.Option(1, "--count", "-n", help="Number of accounts to create"),
-        target: str | None = typer.Option(None, "--target", "-t", help="Target platform: zerotwo | tokenharbor | tokenmix | select"),
+        target: str | None = typer.Option(None, "--target", "-t", help="Target platform: zerotwo | tokenharbor | tokenmix | elevenlabs | select"),
         config: Path | None = typer.Option(None, "--config", "-c", help="TOML config file"),
         cdp_ws: str | None = typer.Option(None, "--cdp-ws", help="CDP websocket URL of a browser"),
         cdp_url: str | None = typer.Option(None, "--cdp-url", help="CDP HTTP endpoint (cloud browser)"),
@@ -211,7 +216,7 @@ if typer is not None:
 
     @app.command()
     def sync(
-        target: str = typer.Option("all", "--target", "-t", help="Target platform: zerotwo | tokenharbor | tokenmix | all"),
+        target: str = typer.Option("all", "--target", "-t", help="Target platform: zerotwo | tokenharbor | tokenmix | elevenlabs | all"),
         router_url: str | None = typer.Option(None, "--router-url", help="9Router base URL"),
         config: Path | None = typer.Option(None, "--config", "-c", help="TOML config file"),
     ) -> None:
@@ -253,7 +258,7 @@ if typer is not None:
                 await client.login_with_password()
 
             targets_to_sync = (
-                ["zerotwo", "tokenharbor", "tokenmix"]
+                ["zerotwo", "tokenharbor", "tokenmix", "elevenlabs"]
                 if target.lower() in ("all", "*")
                 else [target.lower()]
             )
@@ -336,6 +341,34 @@ if typer is not None:
                         },
                     )
                     _log(f"[router] TokenMix: synced {count} key(s) (node={node_id})")
+                    total_synced += count
+
+                elif t in ("elevenlabs", "el"):
+                    keys = _read_records(Path(cfg.output_dir) / "elevenlabs_keys.jsonl")
+                    if not keys:
+                        _log(f"[router] No ElevenLabs keys found in {cfg.output_dir}/elevenlabs_keys.jsonl")
+                        continue
+                    node_id = await client.ensure_node(
+                        name=cfg.elevenlabs.node_name,
+                        base_url=cfg.elevenlabs.api_base,
+                        prefix=cfg.elevenlabs.node_prefix,
+                        api_type="tts",
+                    )
+                    if node_id:
+                        await client.sync_custom_models(node_id, get_default_models("elevenlabs"))
+                    count = await client.sync_connections(
+                        keys,
+                        node_id=node_id,
+                        node_prefix=cfg.elevenlabs.node_prefix,
+                        extra={
+                            "base_url": cfg.elevenlabs.api_base,
+                            "node_name": cfg.elevenlabs.node_name,
+                            "display_name": "ElevenLabs",
+                            "account_type": "elevenlabs",
+                            "api_type": "tts",
+                        },
+                    )
+                    _log(f"[router] ElevenLabs: synced {count} key(s) (node={node_id})")
                     total_synced += count
 
             _log(f"[router] Total synced {total_synced} connection(s) to 9Router at {cfg.router.base_url}")
