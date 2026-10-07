@@ -120,11 +120,11 @@ def render_dashboard() -> None:
 def menu_run_harvester() -> None:
     console.print("\n[bold cyan]=== RUN HARVESTER ===[/bold cyan]")
     console.print("Select target platform:")
-    console.print("  [bold green][1][/bold green] Token Harbor (tokenharbor.ai - Production API Keys thk_live_...)")
-    console.print("  [bold green][2][/bold green] TokenMix     (api.tokenmix.ai - Production API Keys sk-tm_...)")
-    console.print("  [bold cyan][3][/bold cyan] ZeroTwo      (app.zerotwo.ai - Intercept Supabase JWT & Cookie)")
-    console.print("  [bold blue][4][/bold blue] Grok xAI     (accounts.x.ai - Residential Proxy & Auto-OTP)")
-    console.print("  [bold red][0][/bold red] Back to main menu\n")
+    console.print("  [1] Token Harbor (tokenharbor.ai - Production API Keys thk_live_...)")
+    console.print("  [2] TokenMix     (api.tokenmix.ai - Production API Keys sk-tm_...)")
+    console.print("  [3] ZeroTwo      (app.zerotwo.ai - Intercept Supabase JWT & Cookie)")
+    console.print("  [4] Grok xAI     (accounts.x.ai - Residential Proxy & Auto-OTP)")
+    console.print("  [0] Back to main menu\n")
 
     choice = Prompt.ask("Choice", choices=["1", "2", "3", "4", "0"], default="1")
     if choice == "0":
@@ -151,15 +151,15 @@ def menu_run_harvester() -> None:
         is_headless = False
     else:
         console.print("\nBrowser Display Mode:")
-        console.print("  [bold green][1][/bold green] Visible Window (Easy to monitor, default)")
-        console.print("  [bold cyan][2][/bold cyan] Background / Headless (No UI window)")
+        console.print("  [1] Visible Window (Easy to monitor, default)")
+        console.print("  [2] Background / Headless (No UI window)")
         head_choice = Prompt.ask("Choice", choices=["1", "2"], default="1")
         is_headless = (head_choice == "2")
 
     console.print("\nProxy Routing Mode:")
-    console.print("  [bold green][1][/bold green] Direct Connection (Local IP / No proxy)")
-    console.print("  [bold cyan][2][/bold cyan] Cloudflare WARP (WireGuard :10808 - Auto-starts sing-box, clean Cloudflare IP)")
-    console.print("  [bold yellow][3][/bold yellow] Proxy Pool (proxies.txt / Webshare residential)")
+    console.print("  [1] Direct Connection (Local IP / No proxy)")
+    console.print("  [2] Cloudflare WARP (WireGuard :10808 - Auto-starts sing-box, clean Cloudflare IP)")
+    console.print("  [3] Proxy Pool (proxies.txt / Webshare residential)")
     default_proxy_choice = "1" if choice == "1" else "2"
     proxy_mode = Prompt.ask("Choice", choices=["1", "2", "3"], default=default_proxy_choice)
 
@@ -513,11 +513,11 @@ def menu_warp() -> None:
     console.print(table)
 
     console.print("\nActions:")
-    console.print("  [bold green][1][/bold green] Start WARP Proxy Daemon (:10808)")
-    console.print("  [bold red][2][/bold red] Stop WARP Proxy Daemon")
-    console.print("  [bold cyan][3][/bold cyan] Register Fresh Account / Generate New Profile")
-    console.print("  [bold yellow][4][/bold yellow] Test Connectivity & IP Leak")
-    console.print("  [bold white][0][/bold white] Back to main menu\n")
+    console.print("  [1] Start WARP Proxy Daemon (:10808)")
+    console.print("  [2] Stop WARP Proxy Daemon")
+    console.print("  [3] Register Fresh Account / Generate New Profile")
+    console.print("  [4] Test Connectivity & IP Leak")
+    console.print("  [0] Back to main menu\n")
 
     act = Prompt.ask("Choice", choices=["1", "2", "3", "4", "0"], default="1")
     if act == "0":
@@ -561,15 +561,15 @@ def main() -> None:
         render_dashboard()
 
         console.print("[bold]MAIN TOOLS MENU:[/bold]")
-        console.print("  [bold green][1][/bold green] Run Harvester (Token Harbor, TokenMix, ZeroTwo, Grok xAI)")
-        console.print("  [bold yellow][2][/bold yellow] System Doctor (Readiness Diagnostic)")
-        console.print("  [bold cyan][3][/bold cyan] Webshare Residential Hunter (AI Audio Solver)")
-        console.print("  [bold blue][4][/bold blue] Check & Test Proxy Pool")
-        console.print("  [bold magenta][5][/bold magenta] Sync Accounts & Models to 9Router Gateway")
-        console.print("  [bold white][6][/bold white] Harvest Summary / Ledger")
-        console.print("  [bold white][7][/bold white] Refresh ZeroTwo Tokens")
-        console.print("  [bold cyan][8][/bold cyan] Cloudflare WARP Proxy Manager (WireGuard :10808)")
-        console.print("  [bold red][0][/bold red] Exit\n")
+        console.print("  [1] Run Harvester (Token Harbor, TokenMix, ZeroTwo, Grok xAI)")
+        console.print("  [2] System Doctor (Readiness Diagnostic)")
+        console.print("  [3] Webshare Residential Hunter (AI Audio Solver)")
+        console.print("  [4] Check & Test Proxy Pool")
+        console.print("  [5] Sync Accounts & Models to 9Router Gateway")
+        console.print("  [6] Harvest Summary / Ledger")
+        console.print("  [7] Refresh ZeroTwo Tokens")
+        console.print("  [8] Cloudflare WARP Proxy Manager (WireGuard :10808)")
+        console.print("  [0] Exit\n")
 
         pilihan = Prompt.ask("Select option", choices=["1", "2", "3", "4", "5", "6", "7", "8", "0"], default="1")
 
