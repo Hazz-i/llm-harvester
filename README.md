@@ -137,14 +137,33 @@ Copy `.env.example` to `.env`:
 cp .env.example .env
 ```
 
-Set your configuration:
+#### A. General Configuration (Token Harbor, TokenMix & ZeroTwo)
+These settings are used across all platforms:
+
 ```env
+# Browser CDP (Local Chromium/Chrome/Brave on port 9222)
 ZT_CDP_WS=ws://127.0.0.1:9222/devtools/browser/<id>
+
+# 9Router AI Gateway (Local http://localhost:20128 or Remote https://nine.yourdomain.com)
 NINEROUTER_URL=https://nine.hazz.biz.id
 NINEROUTER_API_KEY=sk_...
 # If your 9Router instance is password-protected (dashboard auth):
 NINEROUTER_PASSWORD=your_dashboard_password
+```
+
+> [!TIP]
+> **Farming Token Harbor or TokenMix?**  
+> That's all you need! Both platforms output native OpenAI-compatible API keys (`thk_live_...` and `sk-tm-...`) and connect directly to cloud APIs. **No VPS, no local shim, and no port 8787 required.** You can start harvesting immediately!
+
+#### B. ZeroTwo-Specific Configuration (Requires Shim & Local/VPS Setup)
+Because ZeroTwo uses Supabase JWTs and session cookies instead of standard API keys, it requires the OpenAI-compatible translation shim (`:8787`):
+
+```env
+# Base URL of the ZeroTwo shim (local laptop: http://127.0.0.1:8787/v1)
 ZT_SHIM_BASE_URL=http://localhost:8787/v1
+
+# Optional: If running 9Router & Shim 24/7 on a remote VPS (Setup B)
+# ZT_REMOTE_SYNC=user@vps:/opt/llm-harvester/harvest/sessions.jsonl
 ```
 
 *(Note: `.env` or `config.toml` is automatically loaded by `llm-harvester`)*.
@@ -157,28 +176,31 @@ Simply run without arguments to choose interactively:
 llm-harvester run
 ```
 ```text
-? Select farming target:
-  [1] ZeroTwo      (app.zerotwo.ai)    -> JWT Session, Cookies, 9Router
-  [2] Token Harbor (tokenharbor.ai)    -> API Key (thk_live_...), mail.tm
-  [3] TokenMix     (tokenmix.ai)       -> API Key (sk-tm-...), mail.tm
+Target platform farming:
+  [1] ZeroTwo (Browser CDP + Mail.tm -> 9Router)
+  [2] Token Harbor (Mail.tm + thk_live_... API key)
+  [3] TokenMix (Browser CDP + Mail.tm + sk-tm-... API key)
 Choice [1-3] (default 1):
 ```
 
 #### B. Direct Target Flag
 ```bash
-# Farm 5 Token Harbor accounts (harvests thk_live_... keys into harvest/tokenharbor_keys.jsonl)
+# Farm 5 Token Harbor accounts (direct API keys -> 9Router + models synced)
 llm-harvester run --target tokenharbor --count 5
 
-# Farm 3 TokenMix accounts (harvests sk-tm-... keys into harvest/tokenmix_keys.jsonl)
+# Farm 3 TokenMix accounts (direct API keys -> 9Router + models synced)
 llm-harvester run --target tokenmix --count 3
 
-# Farm 2 ZeroTwo accounts (harvests sessions into harvest/sessions.jsonl & auto-wires to 9Router)
+# Farm 2 ZeroTwo accounts (harvests sessions -> 9Router via shim)
 llm-harvester run --target zerotwo --count 2
 ```
 
 *(Note: `zt-harvester` and `zt-farming` aliases are also available).*
 
-### 4. Run the OpenAI-compatible shim & connect to 9Router (ZeroTwo only)
+### 4. Run the OpenAI-compatible shim (ZeroTwo ONLY)
+
+> [!NOTE]
+> **ZeroTwo only!** Token Harbor and TokenMix connect directly to their public cloud endpoints and register directly into 9Router without running any local shim. Only start the shim if you are harvesting or using **ZeroTwo**.
 
 Start the local shim (automatically loads latest cookies & CSRF token from `harvest/sessions.jsonl`):
 
@@ -188,16 +210,20 @@ llm-harvester shim --port 8787
 
 ---
 
-## Deployment Architectures
+## ZeroTwo Architecture: Local Machine vs Remote Server (VPS)
 
-You can run `zt-farming` and `9Router` in two primary setups:
+> [!IMPORTANT]
+> **This deployment section is strictly specific to ZeroTwo!**
+> - **Token Harbor & TokenMix** run 100% standalone on your local machine without needing a VPS or shim server.
+> - **ZeroTwo** requires the architectures below because it authenticates with Supabase JWT sessions and cookies, which must be served through the OpenAI-compatible shim (`:8787`).
 
-### Setup A: Single-Machine Setup (All-in-One / 1 Mesin) — No Push Needed!
+You can run **ZeroTwo** in two primary setups:
 
-If `zt-farming` runs on the **same machine** as `9Router`:
+### Setup A: Single-Machine Setup (All-in-One / Local Laptop) — No VPS Needed!
+
+If you want to run everything on your **local machine (laptop)** without paying for or managing a VPS:
 > **You do NOT need to push/SCP any files to a server!** Everything reads from and writes to the local machine directly.
 
-#### A.1 Running Everything on Local Machine (Laptop)
 - **9Router**: Running locally (`http://localhost:20128`)
 - **Shim**: Running locally (`http://localhost:8787`)
 - **Harvester**: Running locally on the same laptop
@@ -211,49 +237,40 @@ ZT_SHIM_BASE_URL=http://127.0.0.1:8787/v1
 
 **Step-by-Step Flow:**
 1. Start your local 9Router.
-2. Start the shim (via terminal or PM2):
+2. Start the ZeroTwo shim (via terminal or PM2):
    ```bash
-   zt-farming shim --port 8787
-   # atau via PM2:
-   pm2 start "zt-farming shim --port 8787" --name zt-shim
+   llm-harvester shim --port 8787
+   # or via PM2:
+   pm2 start "llm-harvester shim --port 8787" --name zt-shim
    ```
-3. In 9Router dashboard, set the ZeroTwo node Base URL to:
-   ```text
-   http://127.0.0.1:8787/v1
-   ```
+3. In 9Router dashboard, the ZeroTwo node Base URL is set to `http://127.0.0.1:8787/v1`.
 4. Start your browser with CDP:
    ```bash
    google-chrome --remote-debugging-port=9222 --user-data-dir=./chrome-data
    ```
 5. Run harvest:
    ```bash
-   zt-farming run -n 2
+   llm-harvester run --target zerotwo -n 2
    ```
-   *The accounts are created, saved to `harvest/sessions.jsonl`, and automatically wired into your local 9Router. Zero upload, zero tunnel needed!*
-
-#### A.2 Running Everything on VPS (Server Only)
-- **9Router**: Running on VPS
-- **Shim**: Running on VPS (via systemd or PM2)
-- **Harvester**: Running on VPS (requires headless Chromium + residential proxy pool)
-- **Flow**: Everything operates locally on the VPS file system and loopback network. Node Base URL in 9Router is `http://127.0.0.1:8787/v1`.
+   *The accounts are created, saved to `harvest/sessions.jsonl`, and automatically wired into your local 9Router. Zero upload, zero VPS needed!*
 
 ---
 
-### Setup B: Split-Machine Setup (Laptop Harvester + Remote VPS 9Router/Shim)
+### Setup B: Split-Machine Setup (Laptop Harvester + Remote 24/7 VPS Server)
 
-Use this setup to take advantage of your **laptop's residential ISP connection** (to easily pass Cloudflare turnstiles) while keeping the **shim & 9Router online 24/7 on your VPS**:
+Use this setup to take advantage of your **laptop's residential ISP connection** (to easily pass Cloudflare turnstiles) while keeping the **ZeroTwo shim & 9Router online 24/7 on your VPS**:
 
 - **Laptop**: Chrome CDP + Harvester.
-- **VPS**: 9Router + Shim (managed by systemd or PM2).
+- **VPS**: 9Router + ZeroTwo Shim (managed by systemd or PM2).
 - **Auto-Sync**: When harvest finishes on laptop, it automatically SCP's `sessions.jsonl` to the VPS and updates 9Router.
 
 **Configuration on Laptop (`.env`):**
 ```env
-NINEROUTER_URL=https://nine.hazz.biz.id
+NINEROUTER_URL=https://nine.yourdomain.com
 NINEROUTER_API_KEY=sk_...
 NINEROUTER_PASSWORD=your_password
 ZT_SHIM_BASE_URL=http://127.0.0.1:8787/v1
-ZT_REMOTE_SYNC=user@vps:/opt/zt-farming/harvest/sessions.jsonl
+ZT_REMOTE_SYNC=user@vps:/opt/llm-harvester/harvest/sessions.jsonl
 ```
 
 **Workflow:**
@@ -264,15 +281,15 @@ ZT_REMOTE_SYNC=user@vps:/opt/zt-farming/harvest/sessions.jsonl
    ```
 3. Whenever you want to harvest new accounts on your laptop:
    ```bash
-   zt-farming run -n 2
+   llm-harvester run --target zerotwo -n 2
    ```
    *Harvester will create accounts, register them into 9Router via API, and automatically SCP `sessions.jsonl` to your VPS.*
 
 ---
 
-### Managing the Shim with `systemd` or `pm2`
+### Managing the ZeroTwo Shim with `systemd` or `pm2`
 
-#### Option 1: Running with `systemd` (Recommended for Linux)
+#### Option 1: Running with `systemd` (Recommended for Linux VPS)
 
 Create `/etc/systemd/system/zt-shim.service`:
 
@@ -284,11 +301,11 @@ After=network.target
 [Service]
 Type=simple
 User=ubuntu
-WorkingDirectory=/opt/zt-farming
-ExecStart=/opt/zt-farming/.venv/bin/zt-farming shim --port 8787
+WorkingDirectory=/opt/llm-harvester
+ExecStart=/opt/llm-harvester/.venv/bin/llm-harvester shim --port 8787
 Restart=always
 RestartSec=5
-EnvironmentFile=/opt/zt-farming/.env
+EnvironmentFile=/opt/llm-harvester/.env
 
 [Install]
 WantedBy=multi-user.target
@@ -305,10 +322,10 @@ sudo journalctl -u zt-shim -f
 #### Option 2: Running with `pm2` (Local Machine or VPS)
 
 ```bash
-cd /path/to/zt-farming
+cd /path/to/llm-harvester
 
 # Start with PM2
-pm2 start "zt-farming shim --port 8787" --name zt-shim
+pm2 start "llm-harvester shim --port 8787" --name zt-shim
 
 # Auto-start on reboot
 pm2 save
@@ -319,18 +336,21 @@ pm2 status
 pm2 logs zt-shim
 ```
 
-## CLI
+## CLI Reference
 
-*(Note: `zt-harvester` is also retained as an alias for backwards compatibility)*.
+*(Note: `zt-harvester` and `zt-farming` are also retained as aliases for backwards compatibility)*.
 
 | Command | Purpose |
 | --- | --- |
-| `zt-farming run -n 5` | Create + harvest + connect N accounts |
-| `zt-farming run -n 5 -s user@vps:/path/sessions.jsonl` | Harvest and auto-upload to remote VPS |
-| `zt-farming shim -p 8787` | Run the OpenAI-compatible ZeroTwo shim |
-| `zt-farming sync` | Synchronize active sessions into 9Router |
-| `zt-farming proxies --check` | List and test the proxy pool |
-| `zt-farming export -f csv` | Export the harvest ledger |
+| `llm-harvester run` | Interactive prompt to select target (ZeroTwo, Token Harbor, or TokenMix) |
+| `llm-harvester run -t tokenharbor -n 5` | Harvest 5 Token Harbor accounts & push keys + models to 9Router |
+| `llm-harvester run -t tokenmix -n 3` | Harvest 3 TokenMix accounts & push keys + models to 9Router |
+| `llm-harvester run -t zerotwo -n 2` | Harvest 2 ZeroTwo accounts & connect to 9Router via shim |
+| `llm-harvester run -t zerotwo -n 5 -s user@vps:...` | Harvest ZeroTwo accounts and auto-upload ledger via SCP to remote VPS |
+| `llm-harvester shim -p 8787` | Run the OpenAI-compatible ZeroTwo shim |
+| `llm-harvester sync --target all` | Synchronize all harvested accounts & API keys into 9Router |
+| `llm-harvester proxies --check` | List and test the proxy pool |
+| `llm-harvester export -f csv` | Export the harvest ledger |
 
 ## Proxy pool
 
@@ -339,13 +359,13 @@ accepts the common `host:port:user:pass` format.
 
 ```bash
 # inline
-zt-farming run -n 10 --proxy "31.59.20.176:6754:user:pass" --proxy "45.38.107.97:6014:user:pass"
+llm-harvester run -n 10 --proxy "31.59.20.176:6754:user:pass" --proxy "45.38.107.97:6014:user:pass"
 
 # from a file
-zt-farming run -n 10 --proxy-file proxies.txt
+llm-harvester run -n 10 --proxy-file proxies.txt
 
 # verify reachability + exit IPs
-zt-farming proxies --proxy-file proxies.txt --check
+llm-harvester proxies --proxy-file proxies.txt --check
 ```
 
 Proxies are applied to:

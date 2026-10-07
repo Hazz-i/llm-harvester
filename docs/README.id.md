@@ -136,14 +136,33 @@ Salin `.env.example` ke `.env`:
 cp .env.example .env
 ```
 
-Sesuaikan isi file `.env`:
+#### A. Konfigurasi Umum (Token Harbor, TokenMix & ZeroTwo)
+Pengaturan ini digunakan untuk semua platform:
+
 ```env
+# Browser CDP (Chromium/Chrome/Brave lokal pada port 9222)
 ZT_CDP_WS=ws://127.0.0.1:9222/devtools/browser/<id>
+
+# AI Gateway 9Router (Bisa lokal http://localhost:20128 atau remote https://nine.domainanda.com)
 NINEROUTER_URL=https://nine.hazz.biz.id
 NINEROUTER_API_KEY=sk_...
-# Jika instance 9Router Anda diproteksi password (login dashboard):
-NINEROUTER_PASSWORD=password_dashboard_anda
+# Jika dashboard 9Router Anda diproteksi password:
+NINEROUTER_PASSWORD=password_dasbor_anda
+```
+
+> [!TIP]
+> **Hanya Farming Token Harbor atau TokenMix?**  
+> Cukup konfigurasi di atas! Kedua platform ini menghasilkan API key mandiri standar OpenAI (`thk_live_...` dan `sk-tm-...`) dan langsung memanggil cloud upstream. **Tidak memerlukan VPS, tidak memerlukan shim lokal, dan tidak membutuhkan port 8787.** Anda bisa langsung mulai farming di komputer lokal!
+
+#### B. Konfigurasi Khusus ZeroTwo (Memerlukan Shim & Opsi VPS)
+Karena ZeroTwo menggunakan session JWT Supabase dan cookie sesi (bukan API key standar), dibutuhkan shim penerjemah OpenAI (`:8787`):
+
+```env
+# Base URL shim ZeroTwo (laptop lokal: http://127.0.0.1:8787/v1)
 ZT_SHIM_BASE_URL=http://localhost:8787/v1
+
+# Opsional: Jika menjalankan 9Router & Shim 24/7 di VPS remote (Skenario B)
+# ZT_REMOTE_SYNC=user@ip-vps:/opt/llm-harvester/harvest/sessions.jsonl
 ```
 
 *(Catatan: File `.env` atau `config.toml` otomatis dimuat oleh `llm-harvester`)*.
@@ -156,28 +175,31 @@ Jalankan tanpa opsi untuk memilih platform secara interaktif:
 llm-harvester run
 ```
 ```text
-? Select farming target:
-  [1] ZeroTwo      (app.zerotwo.ai)    -> JWT Session, Cookies, 9Router
-  [2] Token Harbor (tokenharbor.ai)    -> API Key (thk_live_...), mail.tm
-  [3] TokenMix     (tokenmix.ai)       -> API Key (sk-tm-...), mail.tm
+Target platform farming:
+  [1] ZeroTwo (Browser CDP + Mail.tm -> 9Router)
+  [2] Token Harbor (Mail.tm + thk_live_... API key)
+  [3] TokenMix (Browser CDP + Mail.tm + sk-tm-... API key)
 Choice [1-3] (default 1):
 ```
 
 #### B. Langsung via Flag Target
 ```bash
-# Panen 5 akun Token Harbor (API key thk_live_... disimpan ke harvest/tokenharbor_keys.jsonl)
+# Panen 5 akun Token Harbor (API key langsung -> 9Router + sinkronisasi model)
 llm-harvester run --target tokenharbor --count 5
 
-# Panen 3 akun TokenMix (API key sk-tm-... disimpan ke harvest/tokenmix_keys.jsonl)
+# Panen 3 akun TokenMix (API key langsung -> 9Router + sinkronisasi model)
 llm-harvester run --target tokenmix --count 3
 
-# Panen 2 akun ZeroTwo (sesi disimpan ke harvest/sessions.jsonl & auto-connect ke 9Router)
+# Panen 2 akun ZeroTwo (sesi -> 9Router via shim)
 llm-harvester run --target zerotwo --count 2
 ```
 
 *(Catatan: Alias `zt-harvester` dan `zt-farming` tetap tersedia).*
 
-### 4. Jalankan shim kompatibel OpenAI & sambungkan ke 9Router (Khusus ZeroTwo)
+### 4. Jalankan shim kompatibel OpenAI (Khusus ZeroTwo)
+
+> [!NOTE]
+> **Hanya untuk ZeroTwo!** Token Harbor dan TokenMix terhubung langsung ke endpoint publik mereka dan otomatis terdaftar ke 9Router tanpa shim lokal. Jalankan shim hanya jika Anda memanen atau menggunakan **ZeroTwo**.
 
 Jalankan shim lokal (otomatis membaca cookie & CSRF token terbaru dari `harvest/sessions.jsonl`):
 
@@ -187,16 +209,20 @@ llm-harvester shim --port 8787
 
 ---
 
-## Pilihan Arsitektur Deployment
+## Arsitektur ZeroTwo: Mesin Lokal vs Server VPS
 
-Anda bisa menjalankan `zt-farming` dan `9Router` dalam dua skenario utama:
+> [!IMPORTANT]
+> **Bagian ini KHUSUS untuk ZeroTwo!**
+> - **Token Harbor & TokenMix** berjalan 100% mandiri di komputer lokal tanpa memerlukan server VPS atau shim.
+> - **ZeroTwo** memerlukan skenario di bawah ini karena mengandalkan sesi JWT & cookie Supabase yang harus diterjemahkan lewat OpenAI shim (`:8787`).
 
-### Skenario A: 1 Mesin (Single-Machine / All-in-One) — TIDAK PERLU Push/Upload!
+Anda bisa menjalankan **ZeroTwo** dalam dua skenario utama:
 
-Jika `zt-farming` berjalan di **mesin yang sama** dengan `9Router`:
+### Skenario A: 1 Mesin (Single-Machine / Komputer Laptop) — Tanpa VPS!
+
+Jika Anda ingin menjalankan seluruh sistem di **laptop lokal** tanpa repot mengelola VPS:
 > **Anda TIDAK PERLU melakukan upload/SCP/push ke server sama sekali!** Seluruh file dibaca dan ditulis langsung di mesin lokal tersebut.
 
-#### A.1 Semua Berjalan di Komputer Lokal (Laptop)
 - **9Router**: Berjalan lokal (`http://localhost:20128`)
 - **Shim**: Berjalan lokal (`http://localhost:8787`)
 - **Harvester**: Berjalan lokal di laptop yang sama
@@ -210,13 +236,13 @@ ZT_SHIM_BASE_URL=http://127.0.0.1:8787/v1
 
 **Alur Langkah-demi-Langkah:**
 1. Jalankan 9Router lokal Anda.
-2. Jalankan shim (via terminal atau PM2):
+2. Jalankan ZeroTwo shim (via terminal atau PM2):
    ```bash
-   zt-farming shim --port 8787
+   llm-harvester shim --port 8787
    # atau via PM2:
-   pm2 start "zt-farming shim --port 8787" --name zt-shim
+   pm2 start "llm-harvester shim --port 8787" --name zt-shim
    ```
-3. Di dasbor 9Router lokal, atur Base URL node ZeroTwo menjadi:
+3. Di dasbor 9Router lokal, Base URL node ZeroTwo diatur ke:
    ```text
    http://127.0.0.1:8787/v1
    ```
@@ -226,33 +252,27 @@ ZT_SHIM_BASE_URL=http://127.0.0.1:8787/v1
    ```
 5. Jalankan panen:
    ```bash
-   zt-farming run -n 2
+   llm-harvester run --target zerotwo -n 2
    ```
-   *Akun langsung dibuat, tersimpan di `harvest/sessions.jsonl`, dan otomatis terdaftar ke 9Router lokal Anda. Tanpa upload, tanpa Cloudflare Tunnel!*
-
-#### A.2 Semua Berjalan di Server (VPS Saja)
-- **9Router**: Berjalan di VPS
-- **Shim**: Berjalan di VPS (via systemd atau PM2)
-- **Harvester**: Berjalan di VPS (membutuhkan Chromium headless + residential proxy pool)
-- **Alur**: Semua bekerja lokal di filesystem dan jaringan loopback VPS. Base URL di 9Router adalah `http://127.0.0.1:8787/v1`.
+   *Akun langsung dibuat, tersimpan di `harvest/sessions.jsonl`, dan otomatis terdaftar ke 9Router lokal Anda. Tanpa VPS, tanpa SCP!*
 
 ---
 
-### Skenario B: 2 Mesin (Laptop Harvester + Remote VPS 9Router/Shim)
+### Skenario B: 2 Mesin (Laptop Harvester + Server VPS 24/7)
 
-Gunakan skenario ini untuk memanfaatkan **koneksi internet rumahan laptop Anda** (agar lolos verifikasi bot Cloudflare Turnstile tanpa proxy mahal), sementara **shim & 9Router tetap online 24/7 di VPS**:
+Gunakan skenario ini untuk memanfaatkan **koneksi internet rumahan laptop Anda** (agar mudah lolos verifikasi bot Cloudflare Turnstile tanpa proxy datacenter yang terblokir), sementara **ZeroTwo shim & 9Router tetap online 24/7 di VPS**:
 
 - **Laptop**: Chrome CDP + Harvester.
-- **VPS**: 9Router + Shim (dikelola oleh systemd atau PM2).
+- **VPS**: 9Router + ZeroTwo Shim (dikelola oleh systemd atau PM2).
 - **Auto-Sync**: Begitu selesai panen di laptop, file `sessions.jsonl` otomatis terkirim via SCP ke VPS dan kredensial langsung terhubung ke 9Router.
 
 **Konfigurasi di Laptop (`.env`):**
 ```env
-NINEROUTER_URL=https://nine.hazz.biz.id
+NINEROUTER_URL=https://nine.domainanda.com
 NINEROUTER_API_KEY=sk_...
 NINEROUTER_PASSWORD=password_dasbor_anda
 ZT_SHIM_BASE_URL=http://127.0.0.1:8787/v1
-ZT_REMOTE_SYNC=user@ip-vps:/opt/zt-farming/harvest/sessions.jsonl
+ZT_REMOTE_SYNC=user@ip-vps:/opt/llm-harvester/harvest/sessions.jsonl
 ```
 
 **Alur Langkah-demi-Langkah:**
@@ -263,7 +283,7 @@ ZT_REMOTE_SYNC=user@ip-vps:/opt/zt-farming/harvest/sessions.jsonl
    ```
 3. Kapan pun Anda ingin panen akun baru di laptop:
    ```bash
-   zt-farming run -n 2
+   llm-harvester run --target zerotwo -n 2
    ```
    *Harvester akan membuat akun, mendaftarkannya ke 9Router via API, dan otomatis mengirim file `sessions.jsonl` ke VPS Anda.*
 
@@ -271,7 +291,7 @@ ZT_REMOTE_SYNC=user@ip-vps:/opt/zt-farming/harvest/sessions.jsonl
 
 ### Mengelola Shim dengan `systemd` atau `pm2`
 
-#### Opsi 1: Menjalankan dengan `systemd` (Rekomendasi Linux)
+#### Opsi 1: Menjalankan dengan `systemd` (Rekomendasi Linux VPS)
 
 Buat file unit service `/etc/systemd/system/zt-shim.service`:
 
@@ -283,11 +303,11 @@ After=network.target
 [Service]
 Type=simple
 User=ubuntu
-WorkingDirectory=/opt/zt-farming
-ExecStart=/opt/zt-farming/.venv/bin/zt-farming shim --port 8787
+WorkingDirectory=/opt/llm-harvester
+ExecStart=/opt/llm-harvester/.venv/bin/llm-harvester shim --port 8787
 Restart=always
 RestartSec=5
-EnvironmentFile=/opt/zt-farming/.env
+EnvironmentFile=/opt/llm-harvester/.env
 
 [Install]
 WantedBy=multi-user.target
@@ -304,10 +324,10 @@ sudo journalctl -u zt-shim -f
 #### Opsi 2: Menjalankan dengan `pm2` (Lokal atau VPS)
 
 ```bash
-cd /path/to/zt-farming
+cd /path/to/llm-harvester
 
 # Jalankan dengan PM2
-pm2 start "zt-farming shim --port 8787" --name zt-shim
+pm2 start "llm-harvester shim --port 8787" --name zt-shim
 
 # Otomatis hidup saat sistem reboot
 pm2 save
@@ -320,26 +340,33 @@ pm2 logs zt-shim
 
 ---
 
-## CLI
+## Referensi Perintah CLI
 
-*(Catatan: Perintah `zt-harvester` tetap didukung sebagai alias)*.
+*(Catatan: Perintah `zt-harvester` dan `zt-farming` tetap didukung sebagai alias)*.
 
 | Perintah | Fungsi |
 | --- | --- |
-| `zt-farming run -n 5` | Buat + panen + hubungkan N akun |
-| `zt-farming run -n 5 -s user@vps:/path/sessions.jsonl` | Panen akun dan otomatis upload ke server VPS |
-| `zt-farming shim -p 8787` | Jalankan shim ZeroTwo kompatibel OpenAI |
-| `zt-farming sync` | Sinkronisasi session aktif langsung ke 9Router |
-| `zt-farming proxies --check` | Daftar & uji pool proxy |
-| `zt-farming export -f csv` | Ekspor ledger panen |
+| `llm-harvester run` | Menu interaktif untuk memilih target (ZeroTwo, Token Harbor, atau TokenMix) |
+| `llm-harvester run -t tokenharbor -n 5` | Panen 5 akun Token Harbor & push API key + model ke 9Router |
+| `llm-harvester run -t tokenmix -n 3` | Panen 3 akun TokenMix & push API key + model ke 9Router |
+| `llm-harvester run -t zerotwo -n 2` | Panen 2 akun ZeroTwo & hubungkan ke 9Router via shim |
+| `llm-harvester run -t zerotwo -n 5 -s user@vps:...` | Panen ZeroTwo dan otomatis upload ledger via SCP ke VPS remote |
+| `llm-harvester shim -p 8787` | Jalankan shim ZeroTwo kompatibel OpenAI |
+| `llm-harvester sync --target all` | Sinkronisasi seluruh sesi & API key aktif langsung ke 9Router |
+| `llm-harvester proxies --check` | Daftar & uji pool proxy |
+| `llm-harvester export -f csv` | Ekspor ledger panen |
 
 ## Pool Proxy
 
 Sebarkan batas rate per-IP dengan memutar IP keluar tiap akun. Pool menerima format umum `host:port:user:pass`.
 
 ```bash
-zt-farming run -n 10 --proxy-file proxies.txt
-zt-farming proxies --proxy-file proxies.txt --check
+# langsung via flag
+llm-harvester run -n 10 --proxy "31.59.20.176:6754:user:pass" --proxy "45.38.107.97:6014:user:pass"
+
+# via berkas
+llm-harvester run -n 10 --proxy-file proxies.txt
+llm-harvester proxies --proxy-file proxies.txt --check
 ```
 
 ## API Python
