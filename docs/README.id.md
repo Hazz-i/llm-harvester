@@ -21,87 +21,148 @@
 
 ## Apa yang dilakukannya
 
-1. **Multi-Target Farming**: Mendukung **ZeroTwo** (`app.zerotwo.ai`), **Token Harbor** (`tokenharbor.ai`), dan **TokenMix** (`tokenmix.ai`) dengan menu interaktif atau flag CLI.
-2. **Otomasi Akun**: Membuat akun otomatis menggunakan email sekali pakai dari `mail.tm`.
-3. **Turnstile & Verifikasi**: Menangani proteksi anti-bot Cloudflare Turnstile serta verifikasi email magic link maupun kode OTP secara otomatis.
-4. **Panen Kredensial & Integrasi Otomatis 9Router**:
-   - **ZeroTwo**: Mengambil JWT Supabase, cookie, token CSRF, dan terhubung ke **9Router** via OpenAI shim lokal.
-   - **Token Harbor**: Mengambil API key dashboard (`thk_live_...`), menyinkronkan 20+ model ID, dan otomatis terdaftar sebagai node OpenAI di **9Router**.
-   - **TokenMix**: Mengambil API key dashboard (`sk-tm-...`), menyinkronkan 22+ model ID, dan otomatis terdaftar sebagai node OpenAI di **9Router**.
-5. **Output Ledger**: Menyimpan hasil panen ke file JSONL crash-safe (`sessions.jsonl`, `tokenharbor_keys.jsonl`, `tokenmix_keys.jsonl`).
+1. **Multi-Target Farming**: Mendukung **ZeroTwo** (`app.zerotwo.ai`), **Token Harbor** (`tokenharbor.ai`), **TokenMix** (`api.tokenmix.ai`), dan **Grok xAI** (`accounts.x.ai`) dengan menu interaktif atau flag CLI langsung.
+2. **Dashboard Interaktif TUI (`./main.py`)**: Antarmuka terminal interaktif lengkap dengan diagnosis kesiapan sistem, tabel status real-time, dan menu eksekusi satu klik pada 7 modul utama.
+3. **Pilihan Routing Jaringan Fleksibel (Direct secara Default)**:
+   - **Direct Connection (Default)**: Menggunakan koneksi ISP residensial lokal langsung tanpa proxy, memberikan skor reputasi manusia tertinggi di Cloudflare Turnstile.
+   - **Cloudflare WARP (`:10808`)**: Generator akun WireGuard otomatis via REST API resmi Cloudflare dan daemon proxy lokal `sing-box` untuk IP anycast Cloudflare yang bersih (`hosting: false`).
+   - **Proxy Pool**: Rotasi IP otomatis via `proxies.txt` atau proxy residensial Webshare saat melakukan panen dalam jumlah besar.
+4. **Webshare Residential Hunter**: Modul pencari proxy residensial otomatis berbasis AI audio captcha solver (Google SpeechRecognition / CapSolver).
+5. **Otomasi CDP & Anti-Bot Handal**:
+   - Pengetikan native CDP (`Input.insertText`) + sinkronisasi `_valueTracker` React untuk mencegah nilai form kosong pada form Next.js / React.
+   - Deteksi dan penyelesaian otomatis tantangan Cloudflare Turnstile.
+   - Penyesuaian mode tampilan otomatis (jendela browser terlihat saat Turnstile aktif).
+6. **Panen Kredensial & Integrasi Otomatis 9Router**:
+   - **Token Harbor**: Mengambil API key dashboard (`thk_live_...`), menyinkronkan 20+ model ID, dan otomatis terdaftar sebagai provider node OpenAI di **9Router**.
+   - **TokenMix**: Mengambil API key dashboard (`sk-tm-...`), menyinkronkan 22+ model ID, dan otomatis terdaftar sebagai provider node OpenAI di **9Router**.
+   - **ZeroTwo**: Mengambil JWT Supabase, cookie (`cf_clearance`, `__csrf`), token CSRF, dan terhubung ke **9Router** via OpenAI shim lokal.
+   - **Grok xAI**: Otomasi pembuatan akun dengan rotasi proxy residensial dan auto-OTP.
+7. **Output Ledger Crash-Safe**: Menyimpan seluruh hasil panen ke berkas JSONL append-only (`sessions.jsonl`, `tokenharbor_keys.jsonl`, `tokenmix_keys.jsonl`, `grok_accounts.txt`).
 
 ## Arsitektur
 
 ```text
-┌────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│                                       Arsitektur llm-harvester                                         │
-└────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                           Arsitektur llm-harvester                                              │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 
-              [1] Pembuatan Email Sementara               [2] Otomasi Browser & Bypass Bot
-           ┌──────────────────────────────────────┐     ┌──────────────────────────────────────┐
-           │          REST API mail.tm            │     │       Chromium / Chrome (CDP :9222)  │
-           │  (Inbox Sekali Pakai, Link & OTP)    │     │      (Bypass Cloudflare Turnstile)   │
-           └──────────────────┬───────────────────┘     └──────────────────┬───────────────────┘
-                              │                                            │
-                              ▼                                            ▼
-           ┌───────────────────────────────────────────────────────────────────────────────────┐
-           │                             Harvester Engine CLI                                  │
-           │                      (Menu Interaktif atau Flag --target)                         │
-           └──────────────┬─────────────────────────┬──────────────────────────┬───────────────┘
-                          │                         │                          │
-        [Target: zerotwo] │     [Target: tokenharbor]│        [Target: tokenmix]│
-                          ▼                         ▼                          ▼
-               ┌───────────────────────┐ ┌───────────────────────┐ ┌───────────────────────┐
-               │    ZeroTwoCreator     │ │  TokenHarborCreator   │ │    TokenMixCreator    │
-               │   (app.zerotwo.ai)    │ │   (tokenharbor.ai)    │ │    (tokenmix.ai)      │
-               └──────────┬────────────┘ └──────────┬────────────┘ └───────────┬───────────┘
-                          │                         │                          │
-                          │ Panen Supabase JWT,     │ Panen API Key            │ Panen API Key
-                          │ Cookie & Token CSRF     │ (thk_live_...)           │ (sk-tm-...)
-                          ▼                         ▼                          ▼
-               ┌───────────────────────┐ ┌───────────────────────┐ ┌───────────────────────┐
-               │ harvest/              │ │ harvest/              │ │ harvest/              │
-               │ sessions.jsonl        │ │ tokenharbor_keys.jsonl│ │ tokenmix_keys.jsonl   │
-               └──────────┬────────────┘ └──────────┬────────────┘ └───────────┬───────────┘
-                          │                         │                          │
-             Via Shim     │                         │ Node OpenAI Langsung     │ Node OpenAI Langsung
-             & SSE        │                         │ + Sinkronisasi Model     │ + Sinkronisasi Model
-                          ▼                         ▼                          ▼
-               ┌───────────────────────┐ ┌─────────────────────────────────────────────────┐
-               │  OpenAI Shim (:8787)  │ │      Node Provider OpenAI Standar (9Router)     │
-               └──────────┬────────────┘ └─────────────────────────┬───────────────────────┘
-                          │                                        │
-                          └───────────────────┬────────────────────┘
-                                              ▼
-                                 ┌─────────────────────────┐
-                                 │   AI Gateway 9Router    │
-                                 │  (Multi-Account Pooling)│
-                                 └─────────────────────────┘
+   ┌───────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+   │                                           LAPISAN ROUTING JARINGAN                                        │
+   │  [1] Direct Connection (Default)  │  [2] Cloudflare WARP (:10808)  │  [3] Proxy Pool (Webshare/Residensial)│
+   └─────────────────────────────────────┬─────────────────────────────────────────────────────────────────────┘
+                                         │ Mengarahkan Traffic Jaringan Browser & HTTP
+                                         ▼
+   ┌───────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+   │                                     OTOMASI BROWSER & IDENTITAS (CDP :9222)                               │
+   │  • Browser Brave / Chromium / Chrome (CDP Port 9222)                                                      │
+   │  • Pengetikan Native CDP (`Input.insertText`) + Sinkronisasi State React `_valueTracker`                  │
+   │  • Deteksi & Auto-Solver Cloudflare Turnstile                                                             │
+   │  • mail.tm Hydra REST API (Email Sementara, Magic Link & Ekstraksi OTP)                                   │
+   └─────────────────────────────────────┬─────────────────────────────────────────────────────────────────────┘
+                                         │ Mengorkestrasi Registrasi Akun
+                                         ▼
+   ┌───────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+   │                                      MODUL PANEN MULTI-PLATFORM                                           │
+   │  ┌──────────────────┐    ┌──────────────────┐    ┌──────────────────┐    ┌──────────────────┐             │
+   │  │  ZeroTwoCreator  │    │TokenHarborCreator│    │ TokenMixCreator  │    │   GrokCreator    │             │
+   │  │ (app.zerotwo.ai) │    │ (tokenharbor.ai) │    │  (tokenmix.ai)   │    │ (accounts.x.ai)  │             │
+   │  └────────┬─────────┘    └────────┬─────────┘    └────────┬─────────┘    └────────┬─────────┘             │
+   └───────────┼───────────────────────┼───────────────────────┼───────────────────────┼───────────────────────┘
+               │                       │                       │                       │
+               │ Supabase JWT,         │ API Key Dashboard     │ API Key Dashboard     │ Token Sesi &          │
+               │ Cookie & Token CSRF   │ (thk_live_...)        │ (sk-tm-...)           │ Kredensial Auth       │
+               ▼                       ▼                       ▼                       ▼
+   ┌──────────────────────┐ ┌──────────────────────┐ ┌──────────────────────┐ ┌──────────────────────┐
+   │ harvest/             │ │ harvest/             │ │ harvest/             │ │ harvest/             │
+   │ sessions.jsonl       │ │ tokenharbor_keys.json│ │ tokenmix_keys.jsonl  │ │ grok_accounts.txt    │
+   └───────────┬──────────┘ └──────────┬───────────┘ └──────────┬───────────┘ └──────────────────────┘
+               │                       │                        │
+               │ Local SSE Shim        │ Node Provider Langsung │ Node Provider Langsung
+               │ (:8787)               │ & Sinkronisasi 20+ Mod.│ & Sinkronisasi 22+ Mod.
+               ▼                       ▼                        ▼
+   ┌───────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+   │                                            AI GATEWAY 9Router                                             │
+   │                          (Load Balancing Multi-Akun & Endpoint Tunggal Kompatibel OpenAI)                 │
+   └───────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+```mermaid
+flowchart TD
+    subgraph Routing["1. Lapisan Routing Jaringan"]
+        R1["Direct Connection (Default / ISP Asli)"]
+        R2["Cloudflare WARP (WireGuard Anycast :10808)"]
+        R3["Proxy Pool (proxies.txt / Webshare Residential)"]
+    end
+
+    subgraph Automation["2. Otomasi Browser & Anti-Bot (CDP :9222)"]
+        CDP["Brave / Chrome CDP Controller"]
+        REACT["Pengetikan Native CDP & Sinkronisasi React _valueTracker"]
+        TURN["Deteksi & Auto-Solver Cloudflare Turnstile"]
+        MAIL["mail.tm Hydra API (Kotak Surat Sekali Pakai)"]
+    end
+
+    subgraph Harvesters["3. Modul Panen Multi-Platform"]
+        ZT["ZeroTwo (app.zerotwo.ai)"]
+        TH["Token Harbor (tokenharbor.ai)"]
+        TM["TokenMix (tokenmix.ai)"]
+        GK["Grok xAI (accounts.x.ai)"]
+    end
+
+    subgraph Storage["4. Penyimpanan Ledger Crash-Safe"]
+        L_ZT[("harvest/sessions.jsonl")]
+        L_TH[("harvest/tokenharbor_keys.jsonl")]
+        L_TM[("harvest/tokenmix_keys.jsonl")]
+        L_GK[("harvest/grok_accounts.txt")]
+    end
+
+    subgraph Gateway["5. Integrasi AI Gateway 9Router"]
+        SHIM["OpenAI Translation Shim (:8787)"]
+        ROUTER["9Router AI Gateway\n(Endpoint Terpadu OpenAI & Pooling Akun)"]
+    end
+
+    Routing --> Automation
+    Automation --> Harvesters
+
+    ZT -->|Supabase JWT & Cookie| L_ZT
+    TH -->|API Key thk_live_...| L_TH
+    TM -->|API Key sk-tm-...| L_TM
+    GK -->|Kredensial & Sesi| L_GK
+
+    L_ZT --> SHIM --> ROUTER
+    L_TH -->|Node Langsung + Sinkronisasi Model| ROUTER
+    L_TM -->|Node Langsung + Sinkronisasi Model| ROUTER
 ```
 
 ### Penjelasan Alur Arsitektur
 
-1. **Email Sementara Sekali Pakai (`mail.tm`)**:  
-   Harvester secara otomatis membuat kotak email sementara sesuai kebutuhan via REST API `mail.tm` (`POST /accounts`). Email ini digunakan untuk menerima *magic link* verifikasi pendaftaran (ZeroTwo), link konfirmasi akun (Token Harbor), maupun kode OTP / link verifikasi (TokenMix) tanpa memerlukan tab browser webmail pihak ketiga.
+1. **Lapisan Routing Jaringan**:  
+   - **Direct Connection (Default)**: Koneksi langsung tanpa proxy. Sangat ideal untuk lolos Turnstile karena memakai skor reputasi manusia tertinggi dari ISP asli.
+   - **Cloudflare WARP (`:10808`)**: Membuat profil WireGuard via REST API resmi Cloudflare dan merouting traffic melalui daemon proxy lokal `sing-box`.
+   - **Proxy Pool**: Merotasi IP keluar menggunakan proxy HTTP/SOCKS5 terotentikasi dari `proxies.txt` atau Webshare Residential.
 
 2. **Otomasi Browser via CDP (`:9222`)**:  
-   Mengendalikan browser asli (Chromium, Google Chrome, atau Brave) via protokol **Chrome DevTools Protocol (CDP)** pada port 9222. Mekanisme ini melewati tantangan anti-bot Cloudflare Turnstile secara alami, mengisi wizard pendaftaran, serta menyadap cookie sesi, local storage, dan token otentikasi.
+   Mengendalikan browser asli (Chromium, Google Chrome, atau Brave) via protokol **Chrome DevTools Protocol (CDP)** pada port 9222. Dilengkapi pengetikan native `Input.insertText` dan sinkronisasi `_valueTracker` React agar state form Next.js tidak ter-reset, serta menyelesaikan tantangan Cloudflare Turnstile secara otomatis.
 
-3. **Creator Multi-Platform**:  
-   - **`ZeroTwoCreator`**: Mendaftar di `app.zerotwo.ai`, membuka *magic link* dari email, menyelesaikan formulir wizard onboarding, lalu menyadap token Supabase JWT (`access_token`, `refresh_token`), cookie (`cf_clearance`, `__csrf`), dan token CSRF.
-   - **`TokenHarborCreator`**: Mendaftar di `tokenharbor.ai`, membuka tautan konfirmasi dari email `mail.tm`, login otomatis, masuk ke halaman manajemen API key dashboard, lalu membuat dan mengekstrak API key produksi (`thk_live_...`).
-   - **`TokenMixCreator`**: Mendaftar di `tokenmix.ai`, menyelesaikan verifikasi Turnstile via CDP, memverifikasi email lewat `mail.tm`, masuk ke dashboard API keys, lalu membuat dan mengekstrak API key (`sk-tm-...`).
+3. **Email Sementara Sekali Pakai (`mail.tm`)**:  
+   Secara otomatis membuat kotak email sementara sesuai kebutuhan via REST API `mail.tm` (`POST /accounts`). Email ini digunakan untuk menerima link verifikasi (ZeroTwo & Token Harbor) maupun kode OTP (TokenMix) tanpa memerlukan tab webmail terpisah.
 
-4. **Penyimpanan Ledger Terpisah**:  
+4. **Creator Multi-Platform**:  
+   - **`ZeroTwoCreator`**: Mendaftar di `app.zerotwo.ai`, membuka magic link, menyelesaikan wizard onboarding, lalu menyadap token Supabase JWT (`access_token`, `refresh_token`), cookie (`cf_clearance`, `__csrf`), dan token CSRF.
+   - **`TokenHarborCreator`**: Mendaftar di `tokenharbor.ai`, memverifikasi email, membuka halaman manajemen API key, lalu mengekstrak API key produksi (`thk_live_...`).
+   - **`TokenMixCreator`**: Mendaftar di `tokenmix.ai`, menyelesaikan verifikasi Turnstile, memverifikasi email, lalu mengekstrak API key (`sk-tm-...`).
+   - **`GrokCreator`**: Mendaftar akun di `accounts.x.ai` dengan rotasi proxy residensial.
+
+5. **Penyimpanan Ledger Terpisah**:  
    Menyimpan seluruh kredensial hasil panen ke berkas ledger JSONL yang *append-only* dan *crash-safe*:
    - `harvest/sessions.jsonl` (Sesi ZeroTwo)
    - `harvest/tokenharbor_keys.jsonl` (API key Token Harbor)
    - `harvest/tokenmix_keys.jsonl` (API key TokenMix)
+   - `harvest/grok_accounts.txt` (Akun Grok)
 
-5. **Integrasi Langsung 9Router & Sinkronisasi Model**:  
+6. **Integrasi Langsung 9Router & Sinkronisasi Model**:  
    - **ZeroTwo**: Mendaftarkan node OpenAI yang diarahkan ke shim lokal (`http://localhost:8787/v1`) dan memetakan model eksklusif ZeroTwo (`gpt-6-luna`, `deepseek-v4.1-flash`, dll.).
-   - **Token Harbor**: Langsung membuat node OpenAI di 9Router (`https://tokenharbor.ai/v1`, prefix: `tokenharbor`), menghubungkan API key hasil panen, dan otomatis mendaftarkan 20+ model (`claude-opus-5.5`, `gpt-6-astra`, `deepseek-v3`, dll.).
-   - **TokenMix**: Langsung membuat node OpenAI di 9Router (`https://api.tokenmix.ai/v1`, prefix: `tokenmix`), menghubungkan API key hasil panen, dan otomatis mendaftarkan 22+ model (`gpt-4o`, `deepseek-v4`, `gemini-2.5-flash`, dll.).
+   - **Token Harbor**: Langsung membuat node OpenAI di 9Router (`https://tokenharbor.ai/v1`), menghubungkan API key hasil panen, dan otomatis mendaftarkan 20+ model (`claude-opus-5.5`, `gpt-6-astra`, `deepseek-v3`, dll.).
+   - **TokenMix**: Langsung membuat node OpenAI di 9Router (`https://api.tokenmix.ai/v1`), menghubungkan API key hasil panen, dan otomatis mendaftarkan 22+ model (`gpt-4o`, `deepseek-v4`, `gemini-2.5-flash`, dll.).
 
 
 ## Instalasi
@@ -355,11 +416,19 @@ pm2 logs zt-shim
 
 | Perintah | Fungsi |
 | --- | --- |
-| `llm-harvester run` | Menu interaktif untuk memilih target (ZeroTwo, Token Harbor, atau TokenMix) |
+| `./main.py` | Buka Dashboard Interaktif TUI (Diagnosis sistem, 1-klik panen, WARP & proxy) |
+| `llm-harvester run` | Menu interaktif untuk memilih target (ZeroTwo, Token Harbor, TokenMix, Grok xAI) |
+| `llm-harvester run -t tokenharbor --direct` | Panen Token Harbor via Direct Connection (ISP asli tanpa proxy, default) |
+| `llm-harvester run -t tokenharbor --warp` | Panen Token Harbor dengan traffic dialihkan lewat Cloudflare WARP (:10808) |
+| `llm-harvester run -t tokenharbor --proxy-file proxies.txt` | Panen Token Harbor dengan rotasi pool proxy |
 | `llm-harvester run -t tokenharbor -n 5` | Panen 5 akun Token Harbor & push API key + model ke 9Router |
 | `llm-harvester run -t tokenmix -n 3` | Panen 3 akun TokenMix & push API key + model ke 9Router |
 | `llm-harvester run -t zerotwo -n 2` | Panen 2 akun ZeroTwo & hubungkan ke 9Router via shim |
 | `llm-harvester run -t zerotwo -n 5 -s user@vps:...` | Panen ZeroTwo dan otomatis upload ledger via SCP ke VPS remote |
+| `llm-harvester warp status` | Cek status daemon proxy Cloudflare WARP lokal (:10808) |
+| `llm-harvester warp start` | Jalankan daemon sing-box WARP di port 10808 |
+| `llm-harvester warp stop` | Hentikan daemon sing-box WARP |
+| `llm-harvester warp register` | Daftarkan profil WireGuard Cloudflare WARP baru via API REST resmi |
 | `llm-harvester shim -p 8787` | Jalankan shim ZeroTwo kompatibel OpenAI |
 | `llm-harvester sync --target all` | Sinkronisasi seluruh sesi & API key aktif langsung ke 9Router |
 | `llm-harvester proxies --check` | Daftar & uji pool proxy |

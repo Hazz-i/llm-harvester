@@ -22,90 +22,147 @@
 ## What it does
 
 1. **Multi-Target Farming**: Supports **ZeroTwo** (`app.zerotwo.ai`), **Token Harbor** (`tokenharbor.ai`), **TokenMix** (`api.tokenmix.ai`), and **Grok xAI** (`accounts.x.ai`) with interactive terminal selection or direct CLI flags.
-2. **Interactive TUI Dashboard (`./main.py`)**: Full-featured terminal interface with real-time readiness diagnostics, system status tables, and one-click harvesting.
-3. **Cloudflare WARP Manager**: Built-in WireGuard account generator via official Cloudflare REST API and local `sing-box` daemon (`:10808`) for clean Cloudflare edge IPs (`hosting: false`).
+2. **Interactive TUI Dashboard (`./main.py`)**: Full-featured terminal interface with real-time readiness diagnostics, system status tables, and one-click harvesting across 7 dedicated tools.
+3. **Flexible Network Routing (Direct by Default)**:
+   - **Direct Connection (Default)**: Uses clean local residential ISP connection for maximum Cloudflare Turnstile human trust score without proxy overhead.
+   - **Cloudflare WARP (`:10808`)**: Built-in WireGuard account generator via official Cloudflare REST API and local `sing-box` daemon for clean Cloudflare edge IPs (`hosting: false`).
+   - **Proxy Pool**: Automatic rotation via `proxies.txt` or residential proxies when farming at higher volumes.
 4. **Webshare Residential Hunter**: Automated residential proxy extractor powered by AI audio captcha solving (Google SpeechRecognition / CapSolver fallback).
-5. **Turnstile & Bot Detection Bypass**: Handles Cloudflare Turnstile verification, auto-detects headless compatibility (forcing Visible Window when needed), and rotates IPs.
+5. **Turnstile & React-Aware Automation**:
+   - Native CDP input typing (`Input.insertText`) + React `_valueTracker` synchronization preventing cleared form values in Next.js controlled components.
+   - Automatic Cloudflare Turnstile verification detection and solving.
+   - Auto-detects display mode requirements (forcing Visible Window for Turnstile challenges when needed).
 6. **Credential Harvesting & 9Router Auto-Connect**:
-   - **Token Harbor**: Generates `thk_live_...` API keys, extracts/syncs model IDs, and auto-registers into **9Router** as a native OpenAI-compatible provider node.
-   - **TokenMix**: Generates `sk-tm-...` API keys, extracts/syncs model IDs, and auto-registers into **9Router** as a native OpenAI-compatible provider node.
-   - **ZeroTwo**: Extracts Supabase JWTs (`access_token`, `refresh_token`), cookies (`cf_clearance`, `__csrf`), CSRF tokens, and registers into **9Router** via a local OpenAI shim.
+   - **Token Harbor**: Generates `thk_live_...` API keys, extracts/syncs 20+ model IDs, and auto-registers into **9Router** as a native OpenAI-compatible provider node.
+   - **TokenMix**: Generates `sk-tm-...` API keys, extracts/syncs 22+ model IDs, and auto-registers into **9Router** as a native OpenAI-compatible provider node.
+   - **ZeroTwo**: Intercepts Supabase JWTs (`access_token`, `refresh_token`), cookies (`cf_clearance`, `__csrf`), CSRF tokens, and registers into **9Router** via a local OpenAI shim.
    - **Grok xAI**: Automates residential proxy account creation with Gmail subaddress aliases and auto-OTP.
-7. **Proxy Pool Auto-Discovery**: Automatically discovers and loads proxies from `proxies.txt`, `output/webshare_residential.txt`, or `output/live_elite.txt`.
-8. **Crash-Safe Ledger Output**: Writes append-only JSONL ledgers (`sessions.jsonl`, `tokenharbor_keys.jsonl`, `tokenmix_keys.jsonl`, `grok_accounts.txt`).
+7. **Crash-Safe Ledger Output**: Writes append-only JSONL ledgers (`sessions.jsonl`, `tokenharbor_keys.jsonl`, `tokenmix_keys.jsonl`, `grok_accounts.txt`).
 
 ## Architecture
 
 ```text
-┌────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│                                       llm-harvester Architecture                                       │
-└────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                           llm-harvester Architecture                                            │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 
-              [1] Disposable Mailbox Provisioning          [2] Browser Automation & Bot Bypass
-           ┌──────────────────────────────────────┐     ┌──────────────────────────────────────┐
-           │          mail.tm REST API            │     │       Chromium / Chrome (CDP :9222)  │
-           │    (Temp Email, Link & OTP Polling)  │     │     (Cloudflare Turnstile Bypass)    │
-           └──────────────────┬───────────────────┘     └──────────────────┬───────────────────┘
-                              │                                            │
-                              ▼                                            ▼
-           ┌───────────────────────────────────────────────────────────────────────────────────┐
-           │                              llm-harvester CLI Engine                             │
-           │                      (Interactive Selector or --target Flag)                      │
-           └──────────────┬─────────────────────────┬──────────────────────────┬───────────────┘
-                          │                         │                          │
-        [Target: zerotwo] │     [Target: tokenharbor]│        [Target: tokenmix]│
-                          ▼                         ▼                          ▼
-               ┌───────────────────────┐ ┌───────────────────────┐ ┌───────────────────────┐
-               │    ZeroTwoCreator     │ │  TokenHarborCreator   │ │    TokenMixCreator    │
-               │   (app.zerotwo.ai)    │ │   (tokenharbor.ai)    │ │    (tokenmix.ai)      │
-               └──────────┬────────────┘ └──────────┬────────────┘ └───────────┬───────────┘
-                          │                         │                          │
-                          │ Harvests Supabase JWT,  │ Harvests API Key         │ Harvests API Key
-                          │ Cookies & CSRF Token    │ (thk_live_...)           │ (sk-tm-...)
-                          ▼                         ▼                          ▼
-               ┌───────────────────────┐ ┌───────────────────────┐ ┌───────────────────────┐
-               │ harvest/              │ │ harvest/              │ │ harvest/              │
-               │ sessions.jsonl        │ │ tokenharbor_keys.jsonl│ │ tokenmix_keys.jsonl   │
-               └──────────┬────────────┘ └──────────┬────────────┘ └───────────┬───────────┘
-                          │                         │                          │
-             Via Shim     │                         │ Direct OpenAI Node       │ Direct OpenAI Node
-             & SSE        │                         │ + Model Catalog Sync     │ + Model Catalog Sync
-                          ▼                         ▼                          ▼
-               ┌───────────────────────┐ ┌─────────────────────────────────────────────────┐
-               │  OpenAI Shim (:8787)  │ │      Native OpenAI Provider Nodes (9Router)     │
-               └──────────┬────────────┘ └─────────────────────────┬───────────────────────┘
-                          │                                        │
-                          └───────────────────┬────────────────────┘
-                                              ▼
-                                 ┌─────────────────────────┐
-                                 │   9Router AI Gateway    │
-                                 │  (Multi-Account Pooling)│
-                                 └─────────────────────────┘
+   ┌───────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+   │                                           NETWORK ROUTING LAYER                                           │
+   │  [1] Direct Connection (Default)  │  [2] Cloudflare WARP (:10808)  │  [3] Proxy Pool (Webshare/Residential)│
+   └─────────────────────────────────────┬─────────────────────────────────────────────────────────────────────┘
+                                         │ Routes Browser & HTTP Traffic
+                                         ▼
+   ┌───────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+   │                                      BROWSER AUTOMATION & IDENTITY LAYER                                  │
+   │  • Brave / Chromium / Chrome (CDP :9222)                                                                  │
+   │  • Native CDP Input (`Input.insertText`) + React `_valueTracker` State Sync                               │
+   │  • Cloudflare Turnstile Challenge Detection & Auto-Solver                                                 │
+   │  • mail.tm Hydra REST API (Disposable Inboxes, Magic Links & OTP Extraction)                              │
+   └─────────────────────────────────────┬─────────────────────────────────────────────────────────────────────┘
+                                         │ Orchestrates Sign-ups
+                                         ▼
+   ┌───────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+   │                                      MULTI-PLATFORM HARVEST TARGETS                                       │
+   │  ┌──────────────────┐    ┌──────────────────┐    ┌──────────────────┐    ┌──────────────────┐             │
+   │  │  ZeroTwoCreator  │    │TokenHarborCreator│    │ TokenMixCreator  │    │   GrokCreator    │             │
+   │  │ (app.zerotwo.ai) │    │ (tokenharbor.ai) │    │  (tokenmix.ai)   │    │ (accounts.x.ai)  │             │
+   │  └────────┬─────────┘    └────────┬─────────┘    └────────┬─────────┘    └────────┬─────────┘             │
+   └───────────┼───────────────────────┼───────────────────────┼───────────────────────┼───────────────────────┘
+               │                       │                       │                       │
+               │ Supabase JWT,         │ Live API Keys         │ Live API Keys         │ Session Tokens
+               │ Cookies & CSRF        │ (thk_live_...)        │ (sk-tm-...)           │ & Auth Credentials
+               ▼                       ▼                       ▼                       ▼
+   ┌──────────────────────┐ ┌──────────────────────┐ ┌──────────────────────┐ ┌──────────────────────┐
+   │ harvest/             │ │ harvest/             │ │ harvest/             │ │ harvest/             │
+   │ sessions.jsonl       │ │ tokenharbor_keys.json│ │ tokenmix_keys.jsonl  │ │ grok_accounts.txt    │
+   └───────────┬──────────┘ └──────────┬───────────┘ └──────────┬───────────┘ └──────────────────────┘
+               │                       │                        │
+               │ Local SSE Shim        │ Direct Provider Node   │ Direct Provider Node
+               │ (:8787)               │ & Model Sync (20+ IDs) │ & Model Sync (22+ IDs)
+               ▼                       ▼                        ▼
+   ┌───────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+   │                                            9Router AI GATEWAY                                             │
+   │                             (Multi-Account Load Balancing & Unified OpenAI Endpoint)                      │
+   └───────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+```mermaid
+flowchart TD
+    subgraph Routing["1. Network Routing Layer"]
+        R1["Direct Connection (Default / Residential ISP)"]
+        R2["Cloudflare WARP (WireGuard Anycast :10808)"]
+        R3["Proxy Pool (proxies.txt / Webshare Residential)"]
+    end
+
+    subgraph Automation["2. Automation & Bot Bypass (CDP :9222)"]
+        CDP["Brave / Chrome CDP Controller"]
+        REACT["Native Input & React _valueTracker Sync"]
+        TURN["Cloudflare Turnstile Detection & Auto-Solver"]
+        MAIL["mail.tm Hydra API (Disposable Mailboxes)"]
+    end
+
+    subgraph Harvesters["3. Multi-Target Harvesting"]
+        ZT["ZeroTwo (app.zerotwo.ai)"]
+        TH["Token Harbor (tokenharbor.ai)"]
+        TM["TokenMix (tokenmix.ai)"]
+        GK["Grok xAI (accounts.x.ai)"]
+    end
+
+    subgraph Storage["4. Crash-Safe Ledgers"]
+        L_ZT[("harvest/sessions.jsonl")]
+        L_TH[("harvest/tokenharbor_keys.jsonl")]
+        L_TM[("harvest/tokenmix_keys.jsonl")]
+        L_GK[("harvest/grok_accounts.txt")]
+    end
+
+    subgraph Gateway["5. 9Router AI Gateway Integration"]
+        SHIM["ZeroTwo OpenAI Shim (:8787)"]
+        ROUTER["9Router AI Gateway\n(Unified OpenAI API & Account Pooling)"]
+    end
+
+    Routing --> Automation
+    Automation --> Harvesters
+
+    ZT -->|Supabase JWT & Cookies| L_ZT
+    TH -->|thk_live_... API Keys| L_TH
+    TM -->|sk-tm-... API Keys| L_TM
+    GK -->|Credentials & Cookies| L_GK
+
+    L_ZT --> SHIM --> ROUTER
+    L_TH -->|Direct Node + Models Sync| ROUTER
+    L_TM -->|Direct Node + Models Sync| ROUTER
 ```
 
 ### Architecture Flow Explained
 
-1. **Disposable Mailbox (`mail.tm`)**:
-   Automatically provisions disposable mailboxes on-demand via the `mail.tm` REST API (`POST /accounts`). It polls incoming messages to extract verification magic links (ZeroTwo), account confirmation links (Token Harbor), or OTP verification codes (TokenMix) without needing third-party webmail browser tabs.
+1. **Network Routing Layer**:
+   - **Direct Connection (Default)**: Direct local connection without proxies. Ideal for passing Cloudflare Turnstile with native ISP reputation.
+   - **Cloudflare WARP (`:10808`)**: Registers a WireGuard profile via the official Cloudflare REST API and routes traffic through a local `sing-box` mixed proxy daemon.
+   - **Proxy Pool**: Distributes traffic across authenticated HTTP/SOCKS5 proxies from `proxies.txt` or Webshare Residential.
 
 2. **Browser Automation via CDP (`:9222`)**:
-   Controls a real Chromium, Google Chrome, or Brave Browser session via the **Chrome DevTools Protocol (CDP)** (`:9222`). This bypasses Cloudflare Turnstile anti-bot challenges natively, handles dynamic form wizards, and enables live extraction of cookies, local storage, and authentication tokens.
+   Controls a real Chromium, Google Chrome, or Brave Browser session via the **Chrome DevTools Protocol (CDP)** (`:9222`). Features native `Input.insertText` typing with React `_valueTracker` synchronization to prevent Next.js controlled forms from wiping input state, while solving Cloudflare Turnstile anti-bot challenges natively.
 
-3. **Multi-Target Creators**:
-   - **`ZeroTwoCreator`**: Automates sign-up at `app.zerotwo.ai`, follows the email magic link, completes the onboarding wizard, and intercepts Supabase JWT tokens (`access_token`, `refresh_token`), session cookies (`cf_clearance`, `__csrf`), and CSRF tokens.
-   - **`TokenHarborCreator`**: Automates registration at `tokenharbor.ai`, verifies the account via the confirmation URL received from `mail.tm`, logs in, navigates to the API keys management page, and creates/extracts a production API key (`thk_live_...`).
-   - **`TokenMixCreator`**: Automates registration at `tokenmix.ai`, solves Cloudflare Turnstile via CDP, verifies email via `mail.tm`, navigates to dashboard API keys, and creates/extracts an API key (`sk-tm-...`).
+3. **Disposable Identity Provisioning (`mail.tm`)**:
+   Automatically provisions disposable mailboxes on-demand via the `mail.tm` REST API (`POST /accounts`). It polls incoming messages to extract verification magic links (ZeroTwo), account confirmation links (Token Harbor), or OTP verification codes (TokenMix) without needing third-party webmail tabs.
 
-4. **Dedicated Ledgers**:
+4. **Multi-Target Creators**:
+   - **`ZeroTwoCreator`**: Automates sign-up at `app.zerotwo.ai`, follows magic links, completes onboarding, and intercepts Supabase JWT tokens (`access_token`, `refresh_token`), session cookies (`cf_clearance`, `__csrf`), and CSRF tokens.
+   - **`TokenHarborCreator`**: Automates registration at `tokenharbor.ai`, verifies via `mail.tm`, navigates to API keys, and generates production API keys (`thk_live_...`).
+   - **`TokenMixCreator`**: Automates registration at `tokenmix.ai`, solves Turnstile, verifies email via `mail.tm`, and generates API keys (`sk-tm-...`).
+   - **`GrokCreator`**: Automates account provisioning on `accounts.x.ai` with residential proxy rotation.
+
+5. **Dedicated Ledgers**:
    Stores harvested credentials in append-only, crash-safe JSONL ledger files:
    - `harvest/sessions.jsonl` (ZeroTwo sessions)
    - `harvest/tokenharbor_keys.jsonl` (Token Harbor API keys)
    - `harvest/tokenmix_keys.jsonl` (TokenMix API keys)
+   - `harvest/grok_accounts.txt` (Grok accounts)
 
-5. **Direct 9Router Integration & Model Catalog Sync**:
-   - **ZeroTwo**: Registers an OpenAI-compatible node with `baseUrl: http://localhost:8787/v1` backed by the local shim, mapping exclusive ZeroTwo models (`gpt-6-luna`, `deepseek-v4.1-flash`, etc.).
-   - **Token Harbor**: Directly creates an OpenAI provider node in 9Router (`baseUrl: https://tokenharbor.ai/v1`, prefix: `tokenharbor`), registers harvested API keys as connection accounts, and automatically syncs all 20+ model IDs (`claude-opus-5.5`, `gpt-6-astra`, `deepseek-v3`, etc.).
-   - **TokenMix**: Directly creates an OpenAI provider node in 9Router (`baseUrl: https://api.tokenmix.ai/v1`, prefix: `tokenmix`), registers harvested API keys as connection accounts, and automatically syncs all 22+ model IDs (`gpt-4o`, `deepseek-v4`, `gemini-2.5-flash`, etc.).
+6. **Direct 9Router Integration & Model Catalog Sync**:
+   - **ZeroTwo**: Registers an OpenAI-compatible node (`http://localhost:8787/v1`) backed by the local shim, mapping exclusive ZeroTwo models (`gpt-6-luna`, `deepseek-v4.1-flash`, etc.).
+   - **Token Harbor**: Directly creates an OpenAI provider node in 9Router (`https://tokenharbor.ai/v1`), registers harvested API keys, and automatically syncs all 20+ model IDs (`claude-opus-5.5`, `gpt-6-astra`, `deepseek-v3`, etc.).
+   - **TokenMix**: Directly creates an OpenAI provider node in 9Router (`https://api.tokenmix.ai/v1`), registers harvested API keys, and automatically syncs all 22+ model IDs (`gpt-4o`, `deepseek-v4`, `gemini-2.5-flash`, etc.).
 
 
 
@@ -357,8 +414,10 @@ pm2 logs zt-shim
 | --- | --- |
 | `./main.py` | Launch interactive TUI Dashboard (Readiness diagnostic, 1-click harvester, WARP & proxies) |
 | `llm-harvester run` | Interactive prompt to select target (ZeroTwo, Token Harbor, TokenMix, Grok xAI) |
-| `llm-harvester run -t tokenharbor -n 5` | Harvest 5 Token Harbor accounts & push keys + models to 9Router |
+| `llm-harvester run -t tokenharbor --direct` | Harvest Token Harbor using Direct Connection (clean local residential ISP, default) |
 | `llm-harvester run -t tokenharbor --warp` | Harvest Token Harbor routing traffic through Cloudflare WARP (:10808) |
+| `llm-harvester run -t tokenharbor --proxy-file proxies.txt` | Harvest Token Harbor routing through rotated proxy pool |
+| `llm-harvester run -t tokenharbor -n 5` | Harvest 5 Token Harbor accounts & push keys + models to 9Router |
 | `llm-harvester run -t tokenmix -n 3` | Harvest 3 TokenMix accounts & push keys + models to 9Router |
 | `llm-harvester run -t zerotwo -n 2` | Harvest 2 ZeroTwo accounts & connect to 9Router via shim |
 | `llm-harvester run -t zerotwo -n 5 -s user@vps:...` | Harvest ZeroTwo accounts and auto-upload ledger via SCP to remote VPS |
@@ -444,6 +503,7 @@ src/llmharvester/
   zerotwo.py           ZeroTwo sign-up & Supabase JWT interceptor
   browser.py           CDP browser controller & proxy router
   browser_utils.py     Chromium/Brave locator & environment setup
+  cdp.py               Chrome DevTools Protocol (CDP) client & native typing
   proxy.py             Proxy pool with auto-discovery & rotation
   proxy_bridge.py      Local bridge for authenticated Chromium proxies
   router9.py           9Router API integration & model catalog sync
