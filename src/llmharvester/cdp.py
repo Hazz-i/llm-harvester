@@ -172,13 +172,31 @@ class LocalCDP:
             )
         )
 
+    async def insert_text(self, text: str) -> None:
+        await self._send("Input.insertText", {"text": text}, session=True)
+
     async def type_text(self, selector: str, text: str) -> None:
+        focused = await self.evaluate(
+            "(()=>{const e=document.querySelector(%s);if(!e)return false;"
+            "e.focus();if(typeof e.select==='function')e.select();return true;})()"
+            % json.dumps(selector)
+        )
+        if focused:
+            try:
+                await self.insert_text(text)
+            except Exception:
+                pass
         await self.evaluate(
             "(()=>{const e=document.querySelector(%s);if(!e)return;"
-            "const s=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;"
-            "s.call(e,%s);e.dispatchEvent(new Event('input',{bubbles:true}));"
-            "e.dispatchEvent(new Event('change',{bubbles:true}));e.focus();})()"
-            % (json.dumps(selector), json.dumps(text))
+            "if(e.value!==%s){"
+            "  const proto=Object.getPrototypeOf(e);"
+            "  const s=(Object.getOwnPropertyDescriptor(proto,'value')||Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value'))?.set;"
+            "  if(s)s.call(e,%s);else e.value=%s;"
+            "  if(e._valueTracker)e._valueTracker.setValue('');"
+            "  e.dispatchEvent(new Event('input',{bubbles:true,composed:true}));"
+            "  e.dispatchEvent(new Event('change',{bubbles:true,composed:true}));"
+            "}})()"
+            % (json.dumps(selector), json.dumps(text), json.dumps(text), json.dumps(text))
         )
 
     async def screenshot(self) -> bytes | None:
@@ -252,13 +270,34 @@ class BridgeCDP:
             ".find(x=>(x.innerText||'').trim()===%s);if(b){b.click();return true;}"
             "return false;})()" % json.dumps(text)))
 
+    async def insert_text(self, text: str) -> None:
+        await self._use_target()
+        if hasattr(self.session, "Input") and hasattr(self.session.Input, "insertText"):
+            await self.session.Input.insertText({"text": text})
+
     async def type_text(self, selector: str, text: str) -> None:
+        focused = await self.evaluate(
+            "(()=>{const e=document.querySelector(%s);if(!e)return false;"
+            "e.focus();if(typeof e.select==='function')e.select();return true;})()"
+            % json.dumps(selector)
+        )
+        if focused:
+            try:
+                await self.insert_text(text)
+            except Exception:
+                pass
         await self.evaluate(
             "(()=>{const e=document.querySelector(%s);if(!e)return;"
-            "const s=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;"
-            "s.call(e,%s);e.dispatchEvent(new Event('input',{bubbles:true}));"
-            "e.dispatchEvent(new Event('change',{bubbles:true}));e.focus();})()"
-            % (json.dumps(selector), json.dumps(text)))
+            "if(e.value!==%s){"
+            "  const proto=Object.getPrototypeOf(e);"
+            "  const s=(Object.getOwnPropertyDescriptor(proto,'value')||Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value'))?.set;"
+            "  if(s)s.call(e,%s);else e.value=%s;"
+            "  if(e._valueTracker)e._valueTracker.setValue('');"
+            "  e.dispatchEvent(new Event('input',{bubbles:true,composed:true}));"
+            "  e.dispatchEvent(new Event('change',{bubbles:true,composed:true}));"
+            "}})()"
+            % (json.dumps(selector), json.dumps(text), json.dumps(text), json.dumps(text))
+        )
 
     async def screenshot(self) -> bytes | None:
         res = await self.session.Page.captureScreenshot({"format": "png"})

@@ -191,27 +191,30 @@ class TokenHarborCreator:
             self.log("[tokenharbor] Turnstile challenge detected prior to form inputs, waiting for verification...")
             await self._wait_for_turnstile(timeout_seconds=25.0)
 
-        # Wait for Next.js to hydrate the form inputs
+        # Wait for Next.js to hydrate the form inputs and ensure Sign up tab is active
         self.log("[tokenharbor] Waiting for signup form hydration...")
         form_ready = False
         for _ in range(25):
-            has_input = await self.cdp.evaluate(
-                "!!document.querySelector('input[type=\"email\"], input[name=\"email\"], #email, input[autocomplete*=\"email\" i], input[placeholder*=\"email\" i]')"
-            )
-            if has_input:
-                form_ready = True
-                break
-            # Pastikan tab Sign up aktif jika ada switcher
+            # Ensure "Sign up" tab is selected (not "Sign in")
             await self.cdp.evaluate("""(()=>{
                 const btns = Array.from(document.querySelectorAll('button, a, [role="tab"]'));
                 const signupBtn = btns.find(b => {
                     const txt = (b.innerText || b.textContent || '').trim().toLowerCase();
                     return txt === 'sign up' || txt === 'register' || txt === 'create account';
                 });
-                if (signupBtn && signupBtn.getAttribute('aria-selected') !== 'true') {
+                const isCreateAcct = !!document.querySelector('button[type="submit"]')?.innerText?.toLowerCase()?.includes('create');
+                const hasInvite = !!document.querySelector('input[name="invite_code"]');
+                if (signupBtn && (!isCreateAcct && !hasInvite)) {
                     signupBtn.click();
                 }
             })()""")
+
+            has_inputs = await self.cdp.evaluate(
+                "!!document.querySelector('input[name=\"email\"], input[type=\"email\"]') && !!document.querySelector('input[name=\"password\"], input[type=\"password\"]')"
+            )
+            if has_inputs:
+                form_ready = True
+                break
             await self._sleep(1000)
 
         if not form_ready:
@@ -224,41 +227,76 @@ class TokenHarborCreator:
                 };
             })()""")
             self.log(f"[tokenharbor] Form hydration failed. Page state: {page_info}")
-            raise RuntimeError(f"Signup form failed to render email input (URL: {page_info.get('url') if isinstance(page_info, dict) else 'unknown'})")
+            raise RuntimeError(f"Signup form failed to render inputs (URL: {page_info.get('url') if isinstance(page_info, dict) else 'unknown'})")
 
-        # 2. Fill email and password once
+        # 2. Robust Credential Fill Function
         async def _fill_credentials():
-            await self.cdp.evaluate(
-                """(()=>{
-                    const em = document.querySelector('input[type="email"]') || document.querySelector('#email') || document.querySelector('input[name="email"]') || document.querySelector('input[autocomplete*="email" i]') || document.querySelector('input[placeholder*="email" i]');
-                    if (em) {
-                        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
-                        setter.call(em, %s);
-                        em.dispatchEvent(new Event('input', {bubbles: true}));
-                        em.dispatchEvent(new Event('change', {bubbles: true}));
+            # Ensure signup tab is active
+            await self.cdp.evaluate("""(()=>{
+                const btns = Array.from(document.querySelectorAll('button, a'));
+                const signupBtn = btns.find(b => (b.innerText || b.textContent || '').trim().toLowerCase() === 'sign up');
+                const isCreateAcct = !!document.querySelector('button[type="submit"]')?.innerText?.toLowerCase()?.includes('create');
+                if (signupBtn && !isCreateAcct) signupBtn.click();
+            })()""")
+            await self._sleep(300)
+
+            # Type email using type_text (Input.insertText + React sync)
+            await self.cdp.type_text('input[name="email"], input[type="email"]', email)
+            await self._sleep(300)
+
+            # Type password using type_text (Input.insertText + React sync)
+            await self.cdp.type_text('input[name="password"], input[type="password"]', password)
+            await self._sleep(500)
+
+            # Verify and fallback if either field didn't retain value
+            vals = await self.cdp.evaluate("""(()=>{
+                const em = document.querySelector('input[name="email"], input[type="email"]');
+                const pw = document.querySelector('input[name="password"], input[type="password"]');
+                return {
+                    em_len: em ? (em.value || '').length : 0,
+                    pw_len: pw ? (pw.value || '').length : 0
+                };
+            })()""")
+            if not isinstance(vals, dict) or vals.get("em_len", 0) == 0 or vals.get("pw_len", 0) == 0:
+                self.log(f"[tokenharbor] Reinforcing credentials into DOM (current: em={vals.get('em_len') if isinstance(vals, dict) else 0}, pw={vals.get('pw_len') if isinstance(vals, dict) else 0})...")
+                await self.cdp.evaluate("""(()=>{
+                    function setInput(el, val) {
+                        if (!el) return;
+                        el.focus();
+                        const proto = Object.getPrototypeOf(el);
+                        const s = (Object.getOwnPropertyDescriptor(proto, 'value') || Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value'))?.set;
+                        if (s) s.call(el, val); else el.value = val;
+                        if (el._valueTracker) el._valueTracker.setValue('');
+                        el.dispatchEvent(new Event('input', {bubbles: true, composed: true}));
+                        el.dispatchEvent(new Event('change', {bubbles: true, composed: true}));
                     }
-                    const pw = document.querySelector('input[type="password"]') || document.querySelector('#password') || document.querySelector('input[name="password"]');
-                    if (pw) {
-                        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
-                        setter.call(pw, %s);
-                        pw.dispatchEvent(new Event('input', {bubbles: true}));
-                        pw.dispatchEvent(new Event('change', {bubbles: true}));
-                    }
-                })()""" % (json.dumps(email), json.dumps(password))
-            )
+                    setInput(document.querySelector('input[name="email"], input[type="email"]'), %s);
+                    setInput(document.querySelector('input[name="password"], input[type="password"]'), %s);
+                })()""" % (json.dumps(email), json.dumps(password)))
 
         await _fill_credentials()
-        await self._sleep(2000)
+        await self._sleep(1500)
 
         # 3. Always wait for Cloudflare Turnstile token before submitting
         await self._wait_for_turnstile(timeout_seconds=25.0)
         # Natural human pause after Turnstile is solved to avoid "take a breath / too fast" rate-limiting
-        await self._sleep(2500)
+        await self._sleep(2000)
 
         # 4. Submit form
         self.log("[tokenharbor] Submitting signup form...")
         signup_ok = False
         for submit_attempt in range(1, 6):
+            # Verify credentials are still present before clicking submit
+            creds_ok = await self.cdp.evaluate("""(()=>{
+                const em = document.querySelector('input[name="email"], input[type="email"]');
+                const pw = document.querySelector('input[name="password"], input[type="password"]');
+                return Boolean(em && em.value && em.value.length > 0 && pw && pw.value && pw.value.length >= 8);
+            })()""")
+            if not creds_ok:
+                self.log("[tokenharbor] Inputs empty or cleared, re-filling before submit...")
+                await _fill_credentials()
+                await self._sleep(1000)
+
             # Click Create account submit button
             await self.cdp.evaluate(
                 """(()=>{
@@ -295,8 +333,8 @@ class TokenHarborCreator:
             if err_msg:
                 self.log(f"[tokenharbor] Notice during signup: {err_msg}")
                 err_lower = str(err_msg).lower()
-                if "too many sign-ups" in err_lower or "too many signups" in err_lower:
-                    raise RuntimeError(f"Rate limited by Token Harbor: {err_msg}. Use proxy pool to rotate IP.")
+                if "too many sign-ups" in err_lower or "too many signups" in err_lower or "couldn't create" in err_lower:
+                    raise RuntimeError(f"Rate limited or blocked by Token Harbor: {err_msg}. Use proxy pool or Cloudflare WARP to rotate IP.")
                 elif "take a breath" in err_lower or "fast" in err_lower:
                     self.log("[tokenharbor] Backing off 8s due to pace throttle...")
                     await self._sleep(8000)

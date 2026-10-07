@@ -116,6 +116,7 @@ if typer is not None:
         shim_url: str | None = typer.Option(None, "--shim-base-url", help="OpenAI-compatible shim base URL"),
         no_router: bool = typer.Option(False, "--no-router", help="Skip 9Router registration"),
         headless: bool = typer.Option(False, "--headless", "-h", help="Run browser in background/headless mode"),
+        direct: bool = typer.Option(False, "--direct", "--no-proxy", help="Use direct connection without proxies"),
         warp: bool = typer.Option(False, "--warp", help="Route traffic via local Cloudflare WARP proxy (127.0.0.1:10808)"),
         proxy: list[str] = typer.Option(None, "--proxy", help="Proxy host:port:user:pass (repeatable)"),
         proxy_file: str | None = typer.Option(None, "--proxy-file", help="File with one proxy per line"),
@@ -135,7 +136,12 @@ if typer is not None:
         _log(f"[target] Active farming target: {selected_target}")
         if headless:
             cfg.browser.headless = True
-        if warp:
+        if direct:
+            cfg.proxy.enabled = False
+            cfg.proxy.file = None
+            cfg.proxy.inline = []
+            _log("[proxy] Direct connection mode (proxies disabled)")
+        elif warp:
             from .warp import ensure_warp_proxy
             warp_url, warp_status = ensure_warp_proxy()
             _log(f"[warp] Cloudflare WARP active on {warp_url} ({warp_status.get('query', 'exit IP')} - {warp_status.get('org', 'Cloudflare WARP')})")

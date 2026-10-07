@@ -25,3 +25,15 @@ def test_resolve_target_interactive_input(monkeypatch):
 
     monkeypatch.setattr("builtins.input", lambda: "1")
     assert _resolve_target(None, "select") == "zerotwo"
+
+
+def test_cli_run_direct_flag():
+    from typer.testing import CliRunner
+    from llmharvester.cli import app
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["run", "--help"])
+    assert result.exit_code == 0
+    assert "--direct" in result.stdout
+    assert "--no-proxy" in result.stdout
+    assert "--warp" in result.stdout

@@ -178,7 +178,9 @@ def menu_run_harvester() -> None:
     cmd = [sys.executable, "-m", "llmharvester.cli", "run", "--target", t, "--count", str(count)]
     if is_headless:
         cmd.append("--headless")
-    if proxy_mode == "2":
+    if proxy_mode == "1":
+        cmd.append("--direct")
+    elif proxy_mode == "2":
         cmd.append("--warp")
     elif proxy_mode == "3" and Path("proxies.txt").exists():
         cmd.extend(["--proxy-file", "proxies.txt"])

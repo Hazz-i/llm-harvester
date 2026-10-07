@@ -76,3 +76,5 @@ async def test_tokenharbor_creator_flow():
     assert any("https://tokenharbor.ai/login?mode=signup" in u for u in cdp.navigated)
     assert any("https://tokenharbor.ai/verify-email?token=xyz123abc" in u for u in cdp.navigated)
     assert any("https://tokenharbor.ai/dashboard/api-keys" in u for u in cdp.navigated)
+    assert any("password" in t[0] and t[1] == "Password123!" for t in cdp.typed)
+    assert any("email" in t[0] and t[1] == "test@mail.tm" for t in cdp.typed)
