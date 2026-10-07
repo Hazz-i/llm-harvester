@@ -90,6 +90,31 @@ class TokenHarborCreator:
         except Exception:
             pass
 
+    async def _wait_for_turnstile(self, timeout_seconds: float = 30.0) -> bool:
+        """Wait for Cloudflare Turnstile token to be populated if widget is present."""
+        has_widget = await self.cdp.evaluate(
+            "!!document.querySelector('input[name=\"cf-turnstile-response\"], [data-turnstile], iframe[src*=\"challenges\"]')"
+        )
+        if not has_widget:
+            return True
+
+        self.log("[tokenharbor] Waiting for Cloudflare Turnstile challenge...")
+        deadline = time.monotonic() + timeout_seconds
+        while time.monotonic() < deadline:
+            token_len = await self.cdp.evaluate(
+                """(()=>{
+                    const input = document.querySelector('input[name="cf-turnstile-response"]');
+                    return input ? (input.value || '').length : 0;
+                })()"""
+            )
+            if token_len and int(token_len) > 0:
+                self.log("[tokenharbor] Turnstile challenge solved.")
+                return True
+            await self._sleep(1500)
+
+        self.log("[tokenharbor] Turnstile wait reached timeout, continuing anyway...")
+        return False
+
     async def create_account(self) -> HarvestedKey:
         """Create a Token Harbor account, verify via mail.tm, and harvest the API key."""
         retries = max(1, self.config.max_retries)
@@ -123,7 +148,7 @@ class TokenHarborCreator:
         # 1. Navigate to signup page
         self.log(f"[tokenharbor] Navigating to signup: {self.SIGNUP_URL}")
         await self.cdp.navigate(self.SIGNUP_URL, wait_ms=10000)
-        await self._sleep(2000)
+        await self._sleep(2500)
 
         # 2. Fill email and password
         await self.cdp.evaluate(
@@ -145,45 +170,102 @@ class TokenHarborCreator:
                 return !!(em && pw);
             })()""" % (json.dumps(email), json.dumps(password))
         )
-        await self._sleep(1000)
+        await self._sleep(1500)
 
-        # 3. Submit signup form
-        submitted = await self.cdp.evaluate(
-            """(()=>{
-                const btn = [...document.querySelectorAll('button')]
-                    .find(b => /(create account|sign up|daftar)/i.test(b.innerText || ''));
-                if (btn) { btn.click(); return true; }
-                const form = document.querySelector('form');
-                if (form) { form.submit(); return true; }
-                return false;
-            })()"""
-        )
-        self.log(f"[tokenharbor] Signup form submitted ({submitted})")
-        await self._sleep(4000)
+        # 3. Handle Turnstile challenge if present before submitting
+        await self._wait_for_turnstile(timeout_seconds=25.0)
 
-        # If a "Verify email" trigger button exists on screen, click it
+        # 4. Submit form (specifically target the submit / "Create account" button, NOT the tab switcher)
+        self.log("[tokenharbor] Submitting signup form...")
+        for submit_attempt in range(1, 4):
+            # Ensure password is filled (if error cleared it)
+            await self.cdp.evaluate(
+                """(()=>{
+                    const pw = document.querySelector('input[type="password"]') || document.querySelector('#password');
+                    if (pw && !pw.value) {
+                        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+                        setter.call(pw, %s);
+                        pw.dispatchEvent(new Event('input', {bubbles: true}));
+                        pw.dispatchEvent(new Event('change', {bubbles: true}));
+                    }
+                    const btn = document.querySelector('button[type="submit"]') ||
+                                document.querySelector('button[data-analytics="login-signup"]') ||
+                                [...document.querySelectorAll('button')].find(b => /^create account$/i.test((b.innerText || '').trim()));
+                    if (btn && !btn.disabled) {
+                        btn.click();
+                        return true;
+                    }
+                    return false;
+                })()""" % json.dumps(password)
+            )
+            await self._sleep(4000)
+
+            curr_url = await self.cdp.evaluate("window.location.href")
+            if curr_url and "dashboard" in str(curr_url):
+                break
+
+            # Check if human check or rate limit error appeared
+            err_msg = await self.cdp.evaluate(
+                """(()=>{
+                    const errEl = document.querySelector('[data-bordered="true"]');
+                    if (errEl && errEl.innerText) return errEl.innerText.trim();
+                    const p = [...document.querySelectorAll('p, div')].find(el => /(human check|take a breath|fast)/i.test(el.innerText || ''));
+                    return p ? p.innerText.trim() : null;
+                })()"""
+            )
+            if err_msg:
+                self.log(f"[tokenharbor] Notice during signup: {err_msg}")
+                if "human check" in str(err_msg).lower():
+                    await self._wait_for_turnstile(timeout_seconds=30.0)
+                elif "take a breath" in str(err_msg).lower() or "fast" in str(err_msg).lower():
+                    await self._sleep(8000)
+            else:
+                await self._sleep(2000)
+
+        # 5. Check if we reached dashboard or need navigation to dashboard
+        curr_url = await self.cdp.evaluate("window.location.href")
+        if not curr_url or "dashboard" not in str(curr_url):
+            await self.cdp.navigate("https://tokenharbor.ai/dashboard", wait_ms=8000)
+            await self._sleep(3000)
+
+        # 6. On dashboard: dismiss/accept free models modal, and trigger "Verify email"
+        self.log("[tokenharbor] Reached dashboard, triggering verification email...")
         await self.cdp.evaluate(
             """(()=>{
-                const btn = [...document.querySelectorAll('button')]
-                    .find(b => /verify email/i.test(b.innerText || ''));
-                if (btn) { btn.click(); return true; }
+                // Click "Enable free models" if banner/modal exists
+                const freeBtn = [...document.querySelectorAll('button')].find(b => /(enable free models|not now)/i.test((b.innerText || '').trim()));
+                if (freeBtn) freeBtn.click();
+            })()"""
+        )
+        await self._sleep(1500)
+
+        # Click the "Verify email" button on the dashboard banner
+        verified_clicked = await self.cdp.evaluate(
+            """(()=>{
+                const btn = [...document.querySelectorAll('button')].find(b => /^verify email$/i.test((b.innerText || '').trim()));
+                if (btn) {
+                    btn.click();
+                    return true;
+                }
                 return false;
             })()"""
         )
+        self.log(f"[tokenharbor] Clicked dashboard 'Verify email' button ({verified_clicked})")
+        await self._sleep(3000)
 
-        # 4. Wait for email verification link from mail.tm
+        # 7. Wait for verification email from mail.tm
         self.log("[tokenharbor] Waiting for verification email from mail.tm...")
         msg = await self.mail.wait_for_message(
             mailbox,
             timeout=self.config.wait_seconds,
             interval=4.0,
-            match="token harbor",
+            match_sender="tokenharbor",
         )
         if not msg:
-            # Fallback without match filter
+            # Fallback without sender filter
             msg = await self.mail.wait_for_message(
                 mailbox,
-                timeout=15.0,
+                timeout=20.0,
                 interval=3.0,
             )
 
