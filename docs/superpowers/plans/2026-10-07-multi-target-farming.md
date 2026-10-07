@@ -32,17 +32,17 @@
   - `HarvesterConfig.tokenharbor: TokenHarborConfig`
   - `HarvesterConfig.tokenmix: TokenMixConfig`
 
-- [ ] **Step 1: Write failing test in `tests/test_config_ledger.py`**
+- [x] **Step 1: Write failing test in `tests/test_config_ledger.py`**
   Add unit tests validating `TokenHarborConfig`, `TokenMixConfig`, and TOML parsing for `[tokenharbor]` and `[tokenmix]` sections.
-- [ ] **Step 2: Run pytest to verify failure**
+- [x] **Step 2: Run pytest to verify failure**
   Run `.venv/bin/pytest tests/test_config_ledger.py` and confirm failure.
-- [ ] **Step 3: Implement config dataclasses and parsing in `src/ztharvester/config.py`**
+- [x] **Step 3: Implement config dataclasses and parsing in `src/ztharvester/config.py`**
   Add `TokenHarborConfig`, `TokenMixConfig`, update `HarvesterConfig.from_dict` and `from_env`.
-- [ ] **Step 4: Update `config.toml` and `config.example.toml`**
+- [x] **Step 4: Update `config.toml` and `config.example.toml`**
   Add `target = "select"`, `[tokenharbor]`, and `[tokenmix]` blocks.
-- [ ] **Step 5: Run pytest to verify passes**
+- [x] **Step 5: Run pytest to verify passes**
   Run `.venv/bin/pytest tests/test_config_ledger.py`.
-- [ ] **Step 6: Commit changes**
+- [x] **Step 6: Commit changes**
   Commit Task 1 changes.
 
 ---
@@ -63,15 +63,15 @@
   - `TokenHarborCreator(cdp: CDP, mail: MailProvider, config: TokenHarborConfig, log: Any = print)`
   - `TokenHarborCreator.create_account() -> HarvestedKey`
 
-- [ ] **Step 1: Write failing mock test in `tests/test_tokenharbor.py`**
+- [x] **Step 1: Write failing mock test in `tests/test_tokenharbor.py`**
   Create unit test with a mock CDP client and mock MailProvider testing the full sequence: email entry -> verify link extraction -> dashboard API key creation.
-- [ ] **Step 2: Run pytest to verify failure**
+- [x] **Step 2: Run pytest to verify failure**
   Run `.venv/bin/pytest tests/test_tokenharbor.py` and confirm failure.
-- [ ] **Step 3: Implement `src/ztharvester/tokenharbor.py`**
+- [x] **Step 3: Implement `src/ztharvester/tokenharbor.py`**
   Implement `TokenHarborCreator` with registration, email polling, link extraction, and API key generation.
-- [ ] **Step 4: Run pytest to verify test passes**
+- [x] **Step 4: Run pytest to verify test passes**
   Run `.venv/bin/pytest tests/test_tokenharbor.py`.
-- [ ] **Step 5: Commit changes**
+- [x] **Step 5: Commit changes**
   Commit Task 2 changes.
 
 ---
@@ -91,15 +91,15 @@
   - `TokenMixCreator(cdp: CDP, mail: MailProvider, config: TokenMixConfig, log: Any = print)`
   - `TokenMixCreator.create_account() -> HarvestedKey`
 
-- [ ] **Step 1: Write failing mock test in `tests/test_tokenmix.py`**
+- [x] **Step 1: Write failing mock test in `tests/test_tokenmix.py`**
   Create unit test testing the TokenMix flow: registration submission with Turnstile solve detection -> email verification -> API key retrieval (`sk-tm-...`).
-- [ ] **Step 2: Run pytest to verify failure**
+- [x] **Step 2: Run pytest to verify failure**
   Run `.venv/bin/pytest tests/test_tokenmix.py` and confirm failure.
-- [ ] **Step 3: Implement `src/ztharvester/tokenmix.py`**
+- [x] **Step 3: Implement `src/ztharvester/tokenmix.py`**
   Implement `TokenMixCreator` with Turnstile waiting logic and API key creation.
-- [ ] **Step 4: Run pytest to verify test passes**
+- [x] **Step 4: Run pytest to verify test passes**
   Run `.venv/bin/pytest tests/test_tokenmix.py`.
-- [ ] **Step 5: Commit changes**
+- [x] **Step 5: Commit changes**
   Commit Task 3 changes.
 
 ---
@@ -121,15 +121,15 @@
     - Token Harbor: `harvest/tokenharbor_keys.jsonl`
     - TokenMix: `harvest/tokenmix_keys.jsonl`
 
-- [ ] **Step 1: Write failing test in `tests/test_engine_dispatch.py`**
+- [x] **Step 1: Write failing test in `tests/test_engine_dispatch.py`**
   Test engine target dispatching and ledger output selection.
-- [ ] **Step 2: Run pytest to verify failure**
+- [x] **Step 2: Run pytest to verify failure**
   Run `.venv/bin/pytest tests/test_engine_dispatch.py`.
-- [ ] **Step 3: Implement dispatching logic in `src/ztharvester/engine.py`**
+- [x] **Step 3: Implement dispatching logic in `src/ztharvester/engine.py`**
   Add target handling for `tokenharbor` and `tokenmix`, writing to their respective ledger files.
-- [ ] **Step 4: Run pytest to verify test passes**
+- [x] **Step 4: Run pytest to verify test passes**
   Run `.venv/bin/pytest tests/test_engine_dispatch.py`.
-- [ ] **Step 5: Commit changes**
+- [x] **Step 5: Commit changes**
   Commit Task 4 changes.
 
 ---
@@ -147,11 +147,11 @@
 - Produces:
   - Dynamic target resolution prior to running `harvester.run(...)`
 
-- [ ] **Step 1: Write failing test in `tests/test_cli_target.py`**
+- [x] **Step 1: Write failing test in `tests/test_cli_target.py`**
   Test CLI target flag resolution (`--target tokenharbor`, `--target tokenmix`).
-- [ ] **Step 2: Run pytest to verify failure**
+- [x] **Step 2: Run pytest to verify failure**
   Run `.venv/bin/pytest tests/test_cli_target.py`.
-- [ ] **Step 3: Implement CLI `--target` flag and interactive prompt in `src/ztharvester/cli.py`**
+- [x] **Step 3: Implement CLI `--target` flag and interactive prompt in `src/ztharvester/cli.py`**
   Add `--target` option to `run` command. If target is `"select"` or not specified, present prompt:
   ```text
   [?] Select farming target:
@@ -159,7 +159,7 @@
     2. Token Harbor (tokenharbor.ai)
     3. TokenMix (tokenmix.ai)
   ```
-- [ ] **Step 4: Run pytest across the entire test suite**
+- [x] **Step 4: Run pytest across the entire test suite**
   Run `.venv/bin/pytest`.
-- [ ] **Step 5: Commit changes**
+- [x] **Step 5: Commit changes**
   Commit Task 5 changes.
