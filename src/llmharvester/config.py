@@ -150,13 +150,9 @@ class HarvesterConfig:
             cfg.proxy.inline = [
                 p for p in proxies.replace(",", "\n").splitlines() if p.strip()
             ]
-        cfg.proxy.file = _get("PROXY_FILE") or cfg.proxy.file
-        if not cfg.proxy.file and not cfg.proxy.inline:
-            default_p = Path("proxies.txt")
-            if default_p.exists() and default_p.stat().st_size > 0:
-                cfg.proxy.file = str(default_p)
-                cfg.proxy.enabled = True
-        elif cfg.proxy.file:
+        proxy_file = _get("PROXY_FILE")
+        if proxy_file:
+            cfg.proxy.file = proxy_file
             cfg.proxy.enabled = True
         cfg.proxy.scheme = _get("PROXY_SCHEME", cfg.proxy.scheme)
         cfg.proxy.sticky = _get("PROXY_STICKY", "1") not in ("0", "false", "False")

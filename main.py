@@ -157,11 +157,10 @@ def menu_run_harvester() -> None:
         is_headless = (head_choice == "2")
 
     console.print("\nProxy Routing Mode:")
-    console.print("  [1] Direct Connection (Local IP / No proxy)")
+    console.print("  [1] Direct Connection (Local IP / No proxy, default)")
     console.print("  [2] Cloudflare WARP (WireGuard :10808 - Auto-starts sing-box, clean Cloudflare IP)")
     console.print("  [3] Proxy Pool (proxies.txt / Webshare residential)")
-    default_proxy_choice = "1" if choice == "1" else "2"
-    proxy_mode = Prompt.ask("Choice", choices=["1", "2", "3"], default=default_proxy_choice)
+    proxy_mode = Prompt.ask("Choice", choices=["1", "2", "3"], default="1")
 
     target_map = {
         "1": "tokenharbor",
