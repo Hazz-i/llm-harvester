@@ -1,8 +1,8 @@
 <div align="center">
 
-# zt-farming
+# zt-harvester
 
-**Bulk ZeroTwo account creator · session / token / cookie harvester · 9Router auto-connect**
+**Multi-platform AI account creator & token harvester · ZeroTwo, Token Harbor & TokenMix · 9Router auto-connect**
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![License](https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge)](LICENSE)
@@ -11,7 +11,7 @@
 [![ZeroTwo](https://img.shields.io/badge/ZeroTwo-app.zerotwo.ai-ec4899?style=for-the-badge)](https://app.zerotwo.ai)
 [![Status](https://img.shields.io/badge/status-stable-14b8a6?style=for-the-badge)](#)
 
-*Create ZeroTwo accounts in bulk, harvest their JWT session, cookies and CSRF token, and wire every account into [9Router](https://9router.com) as an OpenAI-compatible provider — end to end.*
+*Bulk-provision AI accounts with disposable mail.tm mailboxes, harvest JWT sessions, cookies, or API keys across ZeroTwo, Token Harbor, and TokenMix, and wire them directly into [9Router](https://9router.com) as OpenAI-compatible providers — end to end.*
 
 [English](README.md) · [Bahasa Indonesia](docs/README.id.md) · [Español](docs/README.es.md) · [日本語](docs/README.ja.md) · [中文](docs/README.zh.md) · [Français](docs/README.fr.md)
 
@@ -21,13 +21,14 @@
 
 ## What it does
 
-1. **Creates** N ZeroTwo accounts automatically, each with a disposable mailbox from a mail.tm-compatible provider.
-2. **Verifies** the magic link and walks the onboarding wizard (name, interests).
-3. **Harvests** the Supabase JWT `access_token`, `refresh_token`, the full cookie jar (incl. `cf_clearance` / `__csrf`), the CSRF token, the account profile, and the complete model catalog.
-4. **Connects** every harvested session into **9Router** as an OpenAI-compatible provider connection, so all accounts are reachable through one `/v1` endpoint.
-5. **Bridges the protocol gap** with a built-in OpenAI-compatible shim, because ZeroTwo's own API is not OpenAI-shaped.
-
-Everything is written to a crash-safe JSONL ledger you can resume, export or audit.
+1. **Multi-Target Farming**: Supports **ZeroTwo** (`app.zerotwo.ai`), **Token Harbor** (`tokenharbor.ai`), and **TokenMix** (`tokenmix.ai`) with interactive CLI selection or direct flag.
+2. **Automated Provisioning**: Automatically registers accounts using disposable mailboxes from `mail.tm`.
+3. **Turnstile & Verification**: Automatically handles Cloudflare Turnstile anti-bot challenges and clicks verification email links or enters OTP codes.
+4. **Credential Harvesting**:
+   - **ZeroTwo**: Extracts Supabase JWTs (`access_token`, `refresh_token`), cookies (`cf_clearance`, `__csrf`), CSRF tokens, and registers into **9Router** with a local OpenAI shim.
+   - **Token Harbor**: Automatically creates dashboard API keys (`thk_live_...`).
+   - **TokenMix**: Automatically creates dashboard API keys (`sk-tm-...`).
+5. **Ledger Output**: Writes crash-safe, append-only JSONL files (`sessions.jsonl`, `tokenharbor_keys.jsonl`, `tokenmix_keys.jsonl`).
 
 ## Architecture
 
@@ -89,8 +90,8 @@ Everything is written to a crash-safe JSONL ledger you can resume, export or aud
 ## Install
 
 ```bash
-git clone https://github.com/Hazz-i/zt-farming.git
-cd zt-farming
+git clone https://github.com/Hazz-i/zt-harvester.git
+cd zt-harvester
 pip install -e ".[shim]"
 ```
 
@@ -110,7 +111,7 @@ google-chrome --remote-debugging-port=9222 --user-data-dir=./chrome-data
 
 Get your WebSocket debugger URL via `curl -s http://127.0.0.1:9222/json/version`.
 
-### 2. Configure `.env`
+### 2. Configure `.env` or `config.toml`
 
 Copy `.env.example` to `.env`:
 
@@ -128,25 +129,41 @@ NINEROUTER_PASSWORD=your_dashboard_password
 ZT_SHIM_BASE_URL=http://localhost:8787/v1
 ```
 
-*(Note: `.env` is automatically loaded by `zt-farming`)*.
+*(Note: `.env` or `config.toml` is automatically loaded by `zt-harvester`)*.
 
-### 3. Create, harvest, and connect accounts
+### 3. Create & Harvest Accounts
 
+#### A. Interactive Selection (Prompt)
+Simply run without arguments to choose interactively:
 ```bash
-zt-farming run --count 1
+zt-harvester run
+```
+```text
+? Select farming target:
+  [1] ZeroTwo      (app.zerotwo.ai)    -> JWT Session, Cookies, 9Router
+  [2] Token Harbor (tokenharbor.ai)    -> API Key (thk_live_...), mail.tm
+  [3] TokenMix     (tokenmix.ai)       -> API Key (sk-tm-...), mail.tm
+Choice [1-3] (default 1):
 ```
 
-Every account lands in `harvest/sessions.jsonl`. The tool automatically:
-- Registers the ZeroTwo node in 9Router.
-- Registers all 160+ harvested AI models into 9Router (`zerotwo/<model_id>`).
-- Connects each harvested account credential into 9Router.
+#### B. Direct Target Flag
+```bash
+# Farm 5 Token Harbor accounts (harvests thk_live_... keys into harvest/tokenharbor_keys.jsonl)
+zt-harvester run --target tokenharbor --count 5
 
-### 4. Run the OpenAI-compatible shim & connect to 9Router
+# Farm 3 TokenMix accounts (harvests sk-tm-... keys into harvest/tokenmix_keys.jsonl)
+zt-harvester run --target tokenmix --count 3
+
+# Farm 2 ZeroTwo accounts (harvests sessions into harvest/sessions.jsonl & auto-wires to 9Router)
+zt-harvester run --target zerotwo --count 2
+```
+
+### 4. Run the OpenAI-compatible shim & connect to 9Router (ZeroTwo only)
 
 Start the local shim (automatically loads latest cookies & CSRF token from `harvest/sessions.jsonl`):
 
 ```bash
-zt-farming shim --port 8787
+zt-harvester shim --port 8787
 ```
 
 ---

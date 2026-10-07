@@ -1,8 +1,8 @@
 <div align="center">
 
-# zt-farming
+# zt-harvester
 
-**Pembuat akun ZeroTwo massal · harvester session / token / cookie · koneksi otomatis 9Router**
+**Pembuat akun AI multi-platform & token harvester · ZeroTwo, Token Harbor & TokenMix · koneksi otomatis 9Router**
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![License](https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge)](LICENSE)
@@ -11,7 +11,7 @@
 [![ZeroTwo](https://img.shields.io/badge/ZeroTwo-app.zerotwo.ai-ec4899?style=for-the-badge)](https://app.zerotwo.ai)
 [![Status](https://img.shields.io/badge/status-stable-14b8a6?style=for-the-badge)](#)
 
-*Buat akun ZeroTwo secara massal, ambil sesi JWT, cookie dan token CSRF-nya, lalu hubungkan setiap akun ke [9Router](https://9router.com) sebagai provider yang kompatibel dengan OpenAI — dari awal sampai akhir.*
+*Buat akun AI massal via mail.tm, ambil sesi JWT, cookie, atau API key dari ZeroTwo, Token Harbor, dan TokenMix, lalu hubungkan ke [9Router](https://9router.com) sebagai provider yang kompatibel dengan OpenAI — dari awal sampai akhir.*
 
 [English](../README.md) · [Bahasa Indonesia](README.id.md) · [Español](README.es.md) · [日本語](README.ja.md) · [中文](README.zh.md) · [Français](README.fr.md)
 
@@ -21,11 +21,14 @@
 
 ## Apa yang dilakukannya
 
-1. **Membuat** N akun ZeroTwo secara otomatis, masing-masing dengan email sekali pakai dari penyedia kompatibel mail.tm.
-2. **Memverifikasi** tautan ajaib (magic link) dan menyelesaikan wizard onboarding (nama, minat).
-3. **Mengambil** JWT Supabase `access_token`, `refresh_token`, seluruh cookie (termasuk `cf_clearance` / `__csrf`), token CSRF, profil akun, dan katalog model lengkap.
-4. **Menghubungkan** setiap sesi hasil panen ke **9Router** sebagai koneksi provider yang kompatibel dengan OpenAI, sehingga semua akun dapat diakses lewat satu endpoint `/v1`.
-5. **Menjembatani** perbedaan protokol dengan shim bawaan yang kompatibel dengan OpenAI, karena API ZeroTwo sendiri tidak berbentuk OpenAI.
+1. **Multi-Target Farming**: Mendukung **ZeroTwo** (`app.zerotwo.ai`), **Token Harbor** (`tokenharbor.ai`), dan **TokenMix** (`tokenmix.ai`) dengan menu interaktif atau flag CLI.
+2. **Otomasi Akun**: Membuat akun otomatis menggunakan email sekali pakai dari `mail.tm`.
+3. **Turnstile & Verifikasi**: Menangani proteksi anti-bot Cloudflare Turnstile serta verifikasi email magic link maupun kode OTP secara otomatis.
+4. **Panen Kredensial**:
+   - **ZeroTwo**: Mengambil JWT Supabase, cookie, token CSRF, dan terhubung ke **9Router** via OpenAI shim lokal.
+   - **Token Harbor**: Mengambil API key dashboard (`thk_live_...`).
+   - **TokenMix**: Mengambil API key dashboard (`sk-tm-...`).
+5. **Output Ledger**: Menyimpan hasil panen ke file JSONL crash-safe (`sessions.jsonl`, `tokenharbor_keys.jsonl`, `tokenmix_keys.jsonl`).
 
 ## Arsitektur
 
