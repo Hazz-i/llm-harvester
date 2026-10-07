@@ -449,22 +449,6 @@ def menu_router_sync() -> None:
     subprocess.run(cmd)
 
 
-def menu_ledger_summary() -> None:
-    console.print("\n[bold cyan]=== HARVEST SUMMARY ===[/bold cyan]")
-    harvest_counts = _get_harvest_summary()
-    table = Table(title="Ledger Files (harvest/)")
-    table.add_column("Platform")
-    table.add_column("File")
-    table.add_column("Total Accounts / Keys", justify="right")
-
-    table.add_row("ZeroTwo", "harvest/sessions.jsonl", str(harvest_counts["zerotwo"]))
-    table.add_row("Token Harbor", "harvest/tokenharbor_keys.jsonl", str(harvest_counts["tokenharbor"]))
-    table.add_row("TokenMix", "harvest/tokenmix_keys.jsonl", str(harvest_counts["tokenmix"]))
-    table.add_row("Grok xAI", "harvest/grok_accounts.txt", str(harvest_counts["grok"]))
-
-    console.print(table)
-
-
 def menu_refresh_tokens() -> None:
     console.print("\n[bold cyan]=== REFRESH SUPABASE TOKENS (ZEROTWO) ===[/bold cyan]")
     cmd = [sys.executable, "-m", "llmharvester.cli", "refresh"]
@@ -566,12 +550,11 @@ def main() -> None:
         console.print("  [3] Webshare Residential Hunter (AI Audio Solver)")
         console.print("  [4] Check & Test Proxy Pool")
         console.print("  [5] Sync Accounts & Models to 9Router Gateway")
-        console.print("  [6] Harvest Summary / Ledger")
-        console.print("  [7] Refresh ZeroTwo Tokens")
-        console.print("  [8] Cloudflare WARP Proxy Manager (WireGuard :10808)")
+        console.print("  [6] Refresh ZeroTwo Tokens")
+        console.print("  [7] Cloudflare WARP Proxy Manager (WireGuard :10808)")
         console.print("  [0] Exit\n")
 
-        pilihan = Prompt.ask("Select option", choices=["1", "2", "3", "4", "5", "6", "7", "8", "0"], default="1")
+        pilihan = Prompt.ask("Select option", choices=["1", "2", "3", "4", "5", "6", "7", "0"], default="1")
 
         if pilihan == "1":
             menu_run_harvester()
@@ -584,10 +567,8 @@ def main() -> None:
         elif pilihan == "5":
             menu_router_sync()
         elif pilihan == "6":
-            menu_ledger_summary()
-        elif pilihan == "7":
             menu_refresh_tokens()
-        elif pilihan == "8":
+        elif pilihan == "7":
             menu_warp()
         elif pilihan == "0":
             console.print("\n[dim]Goodbye![/dim]\n")
