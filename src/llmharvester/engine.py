@@ -69,6 +69,8 @@ class Harvester:
             ledger_name = "tokenmix_keys.jsonl"
         elif target == "elevenlabs":
             ledger_name = "elevenlabs_keys.jsonl"
+        elif target == "zai":
+            ledger_name = "zai_keys.jsonl"
         return Ledger(Path(self.config.output_dir) / ledger_name)
 
     async def _make_cdp(self, proxy: str | None = None) -> Any:
@@ -290,6 +292,41 @@ class Harvester:
                     except Exception:  # noqa: BLE001
                         pass
 
+        if cfg.target == "zai":
+            cdp = await self._make_cdp(proxy)
+            try:
+                from .zai import ZaiHarvester
+
+                creator = ZaiHarvester(cdp, mail, config=cfg.zai, log=self.log)
+                res = await creator.harvest()
+                record = res.as_dict()
+                record["index"] = index
+                record["finished_at"] = time.time()
+                if router is not None and res.ok and cfg.router.enabled:
+                    r_res = await router.register_glm_connection(
+                        api_key=res.api_key,
+                        email=res.email,
+                    )
+                    record["router"] = asdict(r_res)
+                    self.log(f"[{index}] 9router (glm): {'ok' if r_res.ok else r_res.message}")
+                self.ledger.append(record)
+                return record
+            finally:
+                launcher = getattr(cdp, "_launcher", None)
+                if launcher and hasattr(launcher, "stop"):
+                    try:
+                        res_stop = launcher.stop()
+                        if asyncio.iscoroutine(res_stop):
+                            await res_stop
+                    except Exception:  # noqa: BLE001
+                        pass
+                close = getattr(cdp, "close", None)
+                if close:
+                    try:
+                        await close()
+                    except Exception:  # noqa: BLE001
+                        pass
+
         account: dict[str, Any] = {"index": index, "started_at": time.time()}
         mailbox = None
         session: HarvestedSession | None = None
@@ -370,7 +407,7 @@ class Harvester:
 
         router: NineRouterClient | None = None
         node_id: str | None = None
-        if cfg.router.enabled and cfg.target in ("zerotwo", "tokenharbor", "tokenmix", "elevenlabs"):
+        if cfg.router.enabled and cfg.target in ("zerotwo", "tokenharbor", "tokenmix", "elevenlabs", "zai"):
             router = NineRouterClient(
                 cfg.router.base_url,
                 api_key=cfg.router.api_key,
