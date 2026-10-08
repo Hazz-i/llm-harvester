@@ -78,6 +78,7 @@ def _get_harvest_summary() -> dict[str, int]:
         ("tokenmix", "tokenmix_keys.jsonl"),
         ("elevenlabs", "elevenlabs_keys.jsonl"),
         ("grok", "grok_accounts.jsonl"),
+        ("zai", "zai_keys.jsonl"),
     ]:
         f = Path("harvest") / fname
         if f.exists():
@@ -120,7 +121,7 @@ def render_dashboard() -> None:
     table.add_row("9Router Gateway", f"[cyan]{router_url}[/cyan]", "Auto-Connect Provider")
     table.add_row(
         "Harvest Ledger",
-        f"[magenta]ZT: {harvest_counts['zerotwo']} | TH: {harvest_counts['tokenharbor']} | TM: {harvest_counts['tokenmix']} | EL: {harvest_counts['elevenlabs']} | Grok: {harvest_counts['grok']}[/magenta]",
+        f"[magenta]ZT: {harvest_counts['zerotwo']} | TH: {harvest_counts['tokenharbor']} | TM: {harvest_counts['tokenmix']} | EL: {harvest_counts['elevenlabs']} | Grok: {harvest_counts['grok']} | Zai: {harvest_counts.get('zai', 0)}[/magenta]",
         "harvest/*",
     )
 
@@ -135,9 +136,10 @@ def menu_run_harvester() -> None:
     console.print("  [3] ElevenLabs   (elevenlabs.io - Free Tier xi-api-key 10,000 Chars)")
     console.print("  [4] ZeroTwo      (app.zerotwo.ai - Intercept Supabase JWT & Cookie)")
     console.print("  [5] Grok xAI     (accounts.x.ai - Residential Proxy & Auto-OTP)")
+    console.print("  [6] Z.ai / ZCode (chat.z.ai - GLM-5.3 3M tokens/day & 9Router)")
     console.print("  [0] Back to main menu\n")
 
-    choice = Prompt.ask("Choice", choices=["1", "2", "3", "4", "5", "0"], default="1")
+    choice = Prompt.ask("Choice", choices=["1", "2", "3", "4", "5", "6", "0"], default="1")
     if choice == "0":
         return
 
@@ -153,11 +155,11 @@ def menu_run_harvester() -> None:
     except ValueError:
         count = 1
 
-    # Token Harbor & ZeroTwo: Cloudflare/Supabase bot-detection breaks in headless mode
-    if choice in ("1", "4"):
-        platform_name = "Token Harbor" if choice == "1" else "ZeroTwo"
+    # Token Harbor, ZeroTwo & Z.ai: Bot-detection / Aliyun slider breaks in headless mode
+    if choice in ("1", "4", "6"):
+        platform_name = "Token Harbor" if choice == "1" else ("ZeroTwo" if choice == "4" else "Z.ai (ZCode)")
         console.print(
-            f"[yellow dim]ℹ  {platform_name} requires Visible Window (Cloudflare bot-detection).[/yellow dim]"
+            f"[yellow dim]ℹ  {platform_name} requires Visible Window (Interactive captcha / bot-detection).[/yellow dim]"
         )
         is_headless = False
     elif choice == "3":
@@ -184,6 +186,7 @@ def menu_run_harvester() -> None:
         "2": "tokenmix",
         "3": "elevenlabs",
         "4": "zerotwo",
+        "6": "zai",
     }
     t = target_map.get(choice, "tokenharbor")
 

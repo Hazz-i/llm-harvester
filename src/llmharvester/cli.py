@@ -78,6 +78,10 @@ def _resolve_target(explicit_target: str | None, cfg_target: str = "select") -> 
         return "tokenmix"
     if target_candidate in ("4", "elevenlabs", "el"):
         return "elevenlabs"
+    if target_candidate in ("5", "grok", "xai"):
+        return "grok"
+    if target_candidate in ("6", "8", "zai", "zcode", "glm"):
+        return "zai"
 
     c = _console()
     prompt_text = (
@@ -86,7 +90,9 @@ def _resolve_target(explicit_target: str | None, cfg_target: str = "select") -> 
         "  [cyan][2][/cyan] Token Harbor (tokenharbor.ai)    -> API Key (thk_live_...), mail.tm\n"
         "  [cyan][3][/cyan] TokenMix     (tokenmix.ai)       -> API Key (sk-tm-...), mail.tm\n"
         "  [cyan][4][/cyan] ElevenLabs   (elevenlabs.io)     -> API Key (xi-api-key), mail.tm / IMAP\n"
-        "Choice [1-4] (default 1): "
+        "  [cyan][5][/cyan] Grok xAI     (accounts.x.ai)     -> Residential Proxy & Auto-OTP\n"
+        "  [cyan][6][/cyan] Z.ai / ZCode (chat.z.ai)         -> GLM-5.3 Coding Plan API Key, 9Router\n"
+        "Choice [1-6] (default 1): "
     )
     if c:
         c.print(prompt_text, end="")
@@ -103,6 +109,10 @@ def _resolve_target(explicit_target: str | None, cfg_target: str = "select") -> 
         return "tokenmix"
     if ans in ("4", "elevenlabs", "el"):
         return "elevenlabs"
+    if ans in ("5", "grok", "xai"):
+        return "grok"
+    if ans in ("6", "8", "zai", "zcode", "glm"):
+        return "zai"
     return "zerotwo"
 
 
@@ -112,7 +122,7 @@ if typer is not None:
     @app.command()
     def run(
         count: int = typer.Option(1, "--count", "-n", help="Number of accounts to create"),
-        target: str | None = typer.Option(None, "--target", "-t", help="Target platform: zerotwo | tokenharbor | tokenmix | elevenlabs | select"),
+        target: str | None = typer.Option(None, "--target", "-t", help="Target platform: zerotwo | tokenharbor | tokenmix | elevenlabs | grok | zai | select"),
         config: Path | None = typer.Option(None, "--config", "-c", help="TOML config file"),
         cdp_ws: str | None = typer.Option(None, "--cdp-ws", help="CDP websocket URL of a browser"),
         cdp_url: str | None = typer.Option(None, "--cdp-url", help="CDP HTTP endpoint (cloud browser)"),
