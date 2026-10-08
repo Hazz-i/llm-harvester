@@ -153,14 +153,6 @@ def menu_run_harvester() -> None:
     except ValueError:
         count = 1
 
-    workers_str = Prompt.ask("Parallel workers / tabs (1-10)", default="1")
-    try:
-        workers = max(1, min(10, int(workers_str)))
-    except ValueError:
-        workers = 1
-    if workers > 1:
-        console.print(f"[cyan]Running {workers} parallel workers (each opens its own tab, auto-registered to 9Router).[/cyan]")
-
     # Token Harbor & ZeroTwo: Cloudflare/Supabase bot-detection breaks in headless mode
     if choice in ("1", "4"):
         platform_name = "Token Harbor" if choice == "1" else "ZeroTwo"
@@ -200,7 +192,7 @@ def menu_run_harvester() -> None:
     console.print(f"[bold cyan]Starting Harvest: {t.upper()} ({count} account{'s' if count > 1 else ''}, {'Headless' if is_headless else 'Visible Window'}, {proxy_label})...[/bold cyan]")
     console.print(f"[bold green]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold green]\n")
 
-    cmd = [sys.executable, "-m", "llmharvester.cli", "run", "--target", t, "--count", str(count), "--concurrency", str(workers)]
+    cmd = [sys.executable, "-m", "llmharvester.cli", "run", "--target", t, "--count", str(count)]
     if is_headless:
         cmd.append("--headless")
     if proxy_mode == "1":

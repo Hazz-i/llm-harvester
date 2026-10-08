@@ -286,15 +286,7 @@ llm-harvester run --target elevenlabs --count 2
 
 # Farm 2 ZeroTwo accounts (harvests sessions -> 9Router via shim)
 llm-harvester run --target zerotwo --count 2
-
-# Farm 50 Token Harbor accounts with 2 parallel workers (2 tabs at once, each auto-registered to 9Router)
-llm-harvester run --target tokenharbor --count 50 --concurrency 2
 ```
-
-#### Parallel workers (`--concurrency`)
-- `--concurrency N` runs **N workers in parallel**; each worker opens **its own browser tab** and registers its own account into **9Router**.
-- Also settable via `.env` (`LLM_CONCURRENCY=2`) or `config.toml` (`concurrency = 2`); the TUI asks for it right after the account count.
-- ⚠️ All tabs share one browser (and its cookies + proxy). For aggressive per-IP limits (e.g. Token Harbor) you still need to rotate the IP — use **WARP** or the **proxy pool**. True per-worker IP rotation requires isolated browser instances, not just tabs.
 
 *(Note: `zt-harvester` alias is also available).*
 

@@ -15,6 +15,6 @@ harvest/
 
 .codegraph/
 .opencode/
-chrome-data/
+chrome-data*/
 config.toml
-output/warp/
+output/
