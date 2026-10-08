@@ -39,9 +39,10 @@ async def _poll(predicate, timeout: float = 20.0, interval: float = 0.25):
 class LocalCDP:
     """Minimal CDP client over a websocket to a local Chromium."""
 
-    def __init__(self, ws_url: str, page_url: str | None = None) -> None:
+    def __init__(self, ws_url: str, page_url: str | None = None, new_tab: bool = False) -> None:
         self.ws_url = ws_url
         self.page_url = page_url
+        self.new_tab = new_tab
         self._ws = None
         self._id = 0
         self._pending: dict[int, asyncio.Future] = {}
@@ -56,17 +57,20 @@ class LocalCDP:
         self._reader_task = asyncio.create_task(self._reader())
         targets = await self._send("Target.getTargets", {})
         page = None
-        for t in targets["targetInfos"]:
-            if t["type"] == "page" and not t["url"].startswith("chrome://"):
-                if self.page_url is None or self.page_url in t["url"]:
-                    page = t
-                    break
-        if page is None:
-            page = next(
-                (t for t in targets["targetInfos"]
-                 if t["type"] == "page" and not t["url"].startswith("chrome://")),
-                None,
-            )
+        # When new_tab is set, always open an isolated tab so parallel workers
+        # (concurrency > 1) each drive their own page instead of sharing one.
+        if not self.new_tab:
+            for t in targets["targetInfos"]:
+                if t["type"] == "page" and not t["url"].startswith("chrome://"):
+                    if self.page_url is None or self.page_url in t["url"]:
+                        page = t
+                        break
+            if page is None:
+                page = next(
+                    (t for t in targets["targetInfos"]
+                     if t["type"] == "page" and not t["url"].startswith("chrome://")),
+                    None,
+                )
         if page is None:
             created = await self._send("Target.createTarget", {"url": "about:blank"})
             self._target_id = created["targetId"]
@@ -218,6 +222,11 @@ class LocalCDP:
                 return []
 
     async def close(self) -> None:
+        if self.new_tab and self._target_id:
+            try:
+                await self._send("Target.closeTarget", {"targetId": self._target_id})
+            except Exception:
+                pass
         if self._reader_task:
             self._reader_task.cancel()
         if self._ws is not None:

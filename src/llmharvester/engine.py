@@ -71,7 +71,7 @@ class Harvester:
             ledger_name = "elevenlabs_keys.jsonl"
         return Ledger(Path(self.config.output_dir) / ledger_name)
 
-    async def _make_cdp(self, proxy: str | None = None) -> Any:
+    async def _make_cdp(self, proxy: str | None = None, new_tab: bool = False) -> Any:
         b = self.config.browser
         if b.mode == "bridge":
             raise RuntimeError("bridge mode is only available inside the browser harness")
@@ -110,18 +110,18 @@ class Harvester:
             )
             b.cdp_ws = live_ws
             update_env_cdp_ws(live_ws)
-            return await LocalCDP(live_ws).connect()
+            return await LocalCDP(live_ws, new_tab=new_tab).connect()
 
         if b.cdp_ws:
             try:
-                return await LocalCDP(b.cdp_ws).connect()
+                return await LocalCDP(b.cdp_ws, new_tab=new_tab).connect()
             except Exception:
                 fresh_ws = await _probe_local_ws(b.cdp_ws)
                 if fresh_ws and fresh_ws != b.cdp_ws:
                     self.log(f"[cdp] Existing cdp_ws expired, auto-recovered fresh endpoint: {fresh_ws}")
                     b.cdp_ws = fresh_ws
                     update_env_cdp_ws(fresh_ws)
-                    return await LocalCDP(fresh_ws).connect()
+                    return await LocalCDP(fresh_ws, new_tab=new_tab).connect()
                 self.log(f"[cdp] Configured cdp_ws unreachable. Auto-activating CDP browser on port 9222...")
                 live_ws = await asyncio.get_event_loop().run_in_executor(
                     None,
@@ -129,7 +129,7 @@ class Harvester:
                 )
                 b.cdp_ws = live_ws
                 update_env_cdp_ws(live_ws)
-                return await LocalCDP(live_ws).connect()
+                return await LocalCDP(live_ws, new_tab=new_tab).connect()
 
     async def create_one(
         self,
@@ -143,7 +143,7 @@ class Harvester:
         cfg = self.config
 
         if cfg.target == "tokenharbor":
-            cdp = await self._make_cdp(proxy)
+            cdp = await self._make_cdp(proxy, new_tab=self.config.concurrency > 1)
             try:
                 creator = TokenHarborCreator(cdp, mail, config=cfg.tokenharbor, log=self.log)
                 res = await creator.create_account()
@@ -190,7 +190,7 @@ class Harvester:
                         pass
 
         if cfg.target == "tokenmix":
-            cdp = await self._make_cdp(proxy)
+            cdp = await self._make_cdp(proxy, new_tab=self.config.concurrency > 1)
             try:
                 creator = TokenMixCreator(cdp, mail, config=cfg.tokenmix, log=self.log)
                 res = await creator.create_account()
@@ -236,7 +236,7 @@ class Harvester:
                         pass
 
         if cfg.target == "elevenlabs":
-            cdp = await self._make_cdp(proxy)
+            cdp = await self._make_cdp(proxy, new_tab=self.config.concurrency > 1)
             try:
                 creator = ElevenLabsCreator(cdp, mail, config=cfg.elevenlabs, log=self.log)
                 res = await creator.create_account()
@@ -297,7 +297,7 @@ class Harvester:
             mailbox = await mail.create_mailbox(cfg.mail.domain, cfg.mail.prefix)
             self.log(f"[{index}] attempt {attempt}: mailbox {mailbox.address}"
                      + (f" via {proxy}" if proxy else ""))
-            cdp = await self._make_cdp(proxy)
+            cdp = await self._make_cdp(proxy, new_tab=self.config.concurrency > 1)
             try:
                 creator = ZeroTwoCreator(
                     cdp, name=cfg.zerotwo.name, interest=cfg.zerotwo.interest,

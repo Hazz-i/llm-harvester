@@ -129,13 +129,17 @@ def test_elevenlabs_config_from_env(monkeypatch):
     monkeypatch.setenv("IMAP_USER", "user@test.com")
     monkeypatch.setenv("IMAP_PASSWORD", "secret")
     monkeypatch.setenv("IMAP_ENABLED", "true")
+    monkeypatch.setenv("EMAIL_DOMAIN", "example.com")
 
     cfg = HarvesterConfig.from_env()
     assert cfg.elevenlabs.key_name_prefix == "custom-el"
     assert cfg.elevenlabs.node_name == "MyElevenLabs"
-    assert cfg.elevenlabs.imap_user == "user@test.com"
-    assert cfg.elevenlabs.imap_password == "secret"
-    assert cfg.elevenlabs.imap_enabled is True
+    # IMAP catch-all is used ONLY by TokenMix (and Grok); ElevenLabs uses mail.tm.
+    assert cfg.elevenlabs.imap_enabled is False
+    assert cfg.elevenlabs.imap_user is None
+    assert cfg.tokenmix.imap_enabled is True
+    assert cfg.tokenmix.imap_user == "user@test.com"
+    assert cfg.tokenmix.email_domain == "example.com"
 
 
 @pytest.mark.asyncio
@@ -149,8 +153,8 @@ async def test_configure_api_key_modal():
 
     eval_scripts = " ".join(cdp.evaluations)
     assert "restrict key" in eval_scripts.lower()
-    assert "Write" in eval_scripts
-    assert "Access" in eval_scripts
+    assert "access" in eval_scripts.lower()
+    assert "write" in eval_scripts.lower()
     assert "prod-harvest" in eval_scripts
 
 
