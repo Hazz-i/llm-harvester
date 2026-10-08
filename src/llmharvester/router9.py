@@ -216,6 +216,8 @@ class NineRouterClient:
                 display_name = "TokenMix"
             elif node_prefix == "elevenlabs":
                 display_name = "ElevenLabs"
+            elif node_prefix in ("zai", "glm"):
+                display_name = "Z.ai (GLM)"
             else:
                 display_name = "ZeroTwo"
         psd: dict[str, Any] = {
@@ -233,6 +235,24 @@ class NineRouterClient:
             provider=provider,
             api_key=access_token,
             name=f"{display_name} · {email}",
+            provider_specific=psd,
+        )
+
+    async def register_glm_connection(
+        self,
+        api_key: str,
+        name: str = "GLM-Zai",
+        email: str | None = None,
+    ) -> RouterResult:
+        """Register a Z.ai Coding Plan API key into 9Router under native provider 'glm'."""
+        provider_name = f"GLM · {email}" if email else name
+        psd: dict[str, Any] = {"authMode": "apikey"}
+        if email:
+            psd["email"] = email
+        return await self.add_connection(
+            provider="glm",
+            api_key=api_key,
+            name=provider_name,
             provider_specific=psd,
         )
 
