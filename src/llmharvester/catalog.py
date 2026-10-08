@@ -8,8 +8,27 @@ Provides curated model lists and live model-discovery helpers for:
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from typing import Any
 import httpx
+
+TARGET_ZAI: str = "zai"
+
+# Z.ai / ZCode GLM models
+ZAI_MODELS: list[dict[str, Any]] = [
+    {"id": "GLM-5.3", "name": "GLM 5.3", "provider": "zai", "type": "llm"},
+    {"id": "GLM-5.3-Flash", "name": "GLM 5.3 Flash", "provider": "zai", "type": "llm"},
+    {"id": "GLM-4.5-Flash", "name": "GLM 4.5 Flash", "provider": "zai", "type": "llm"},
+]
+
+@dataclass
+class TargetCatalog:
+    name: str
+    display_name: str
+    category: str
+    models: list[str] = field(default_factory=list)
+    default_port: int = 20128
+    ledger_file: str = "zai_keys.jsonl"
 
 
 # ZeroTwo models exposed via OpenAI-compatible shim
@@ -89,7 +108,31 @@ def get_default_models(platform: str) -> list[dict[str, Any]]:
         return list(ZEROTWO_MODELS)
     if p in ("grok", "grok-xai", "xai"):
         return list(GROK_MODELS)
+    if p in ("zai", "zcode", "glm"):
+        return list(ZAI_MODELS)
     return []
+
+
+def get_target_catalog(target: str) -> TargetCatalog:
+    """Return TargetCatalog metadata for the target."""
+    t = target.lower()
+    if t in (TARGET_ZAI, "zcode", "glm"):
+        return TargetCatalog(
+            name=TARGET_ZAI,
+            display_name="Z.ai (GLM-5.3 Coding Plan)",
+            category="oauth",
+            models=["GLM-5.3", "GLM-5.3-Flash", "GLM-4.5-Flash"],
+            default_port=20128,
+            ledger_file="zai_keys.jsonl",
+        )
+    return TargetCatalog(
+        name=t,
+        display_name=t.title(),
+        category="custom",
+        models=[m["id"] for m in get_default_models(t)],
+        default_port=20128,
+        ledger_file=f"{t}_keys.jsonl",
+    )
 
 
 async def fetch_provider_models(

@@ -79,8 +79,16 @@ class GrokConfig:
     # 9Router provider slug to insert connections under:
     #   "grok-web" -> Grok Web (Subscription)  [sso cookie]  <-- matches harvested accounts
     #   "grok-cli" -> Grok CLI (Grok Build)     [OAuth device-code]
-    #   "xai"      -> xAI (Grok)                [OAuth or API key]
     provider: str = "grok-web"
+
+
+@dataclass
+class ZaiConfig:
+    key_name_prefix: str = "zai-glm"
+    wait_seconds: float = 120.0
+    max_retries: int = 2
+    aliyun_timeout: float = 120.0
+    auto_claim: bool = True
 
 
 @dataclass
@@ -132,6 +140,7 @@ class HarvesterConfig:
     tokenmix: TokenMixConfig = field(default_factory=TokenMixConfig)
     elevenlabs: ElevenLabsConfig = field(default_factory=ElevenLabsConfig)
     grok: GrokConfig = field(default_factory=GrokConfig)
+    zai: ZaiConfig = field(default_factory=ZaiConfig)
     router: RouterConfig = field(default_factory=RouterConfig)
     browser: BrowserConfig = field(default_factory=BrowserConfig)
     proxy: ProxyConfig = field(default_factory=ProxyConfig)
@@ -188,6 +197,13 @@ class HarvesterConfig:
         cfg.grok.node_name = os.getenv("GROK_NODE_NAME", cfg.grok.node_name)
         cfg.grok.node_prefix = os.getenv("GROK_NODE_PREFIX", cfg.grok.node_prefix)
         cfg.grok.provider = os.getenv("GROK_PROVIDER", cfg.grok.provider)
+        if _get("ZAI_KEY_PREFIX"):
+            cfg.zai.key_name_prefix = _get("ZAI_KEY_PREFIX")
+        if _get("ZAI_ALIYUN_TIMEOUT"):
+            try:
+                cfg.zai.aliyun_timeout = float(_get("ZAI_ALIYUN_TIMEOUT"))
+            except ValueError:
+                pass
         cfg.router.base_url = os.getenv("NINEROUTER_URL", cfg.router.base_url)
         cfg.router.api_key = os.getenv("NINEROUTER_API_KEY", cfg.router.api_key)
         cfg.router.password = os.getenv("NINEROUTER_PASSWORD") or None
