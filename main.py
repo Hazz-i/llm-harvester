@@ -63,11 +63,21 @@ def _check_warp_status() -> tuple[str, str]:
     return "[dim]Standby[/dim]", "[dim]Auto-Registerable[/dim]"
 
 
+def _proxy_source() -> Path | None:
+    """First non-empty proxy file, matching ProxyPool.from_env() discovery order."""
+    for cand in ["proxies.txt", "output/webshare_residential.txt", "output/live_elite.txt"]:
+        p = Path(cand)
+        if p.exists() and p.stat().st_size > 0:
+            if any(l.strip() and not l.lstrip().startswith("#") for l in p.read_text().splitlines()):
+                return p
+    return None
+
+
 def _get_proxy_count() -> int:
-    p = Path("proxies.txt")
-    if not p.exists():
+    p = _proxy_source()
+    if p is None:
         return 0
-    return sum(1 for line in p.read_text().splitlines() if line.strip() and not line.startswith("#"))
+    return sum(1 for line in p.read_text().splitlines() if line.strip() and not line.lstrip().startswith("#"))
 
 
 def _get_harvest_summary() -> dict[str, int]:
@@ -145,12 +155,15 @@ def menu_run_harvester() -> None:
         menu_grok_farm()
         return
 
-    count_str = Prompt.ask("Number of accounts to harvest", default="1")
+    count_str = Prompt.ask("Number of accounts to harvest (0 = cancel)", default="1")
     try:
         count = int(count_str)
-        if count < 1:
-            count = 1
     except ValueError:
+        count = 1
+    if count == 0:
+        console.print("[yellow]Cancelled.[/yellow]")
+        return
+    if count < 1:
         count = 1
 
     # Token Harbor & ZeroTwo: Cloudflare/Supabase bot-detection breaks in headless mode
@@ -357,12 +370,15 @@ def menu_webshare_residential() -> None:
         console.print(f"[bold red]Failed loading Webshare Hunter module:[/bold red] {e}")
         return
 
-    acc_str = Prompt.ask("How many Webshare accounts to harvest? (1 account = 10 Residential IPs)", default="1")
+    acc_str = Prompt.ask("How many Webshare accounts to harvest? (1 account = 10 Residential IPs, 0 = cancel)", default="1")
     try:
         total_acc = int(acc_str)
-        if total_acc < 1:
-            total_acc = 1
     except ValueError:
+        total_acc = 1
+    if total_acc == 0:
+        console.print("[yellow]Cancelled.[/yellow]")
+        return
+    if total_acc < 1:
         total_acc = 1
 
     cs_info = check_capsolver_balance()
@@ -395,10 +411,80 @@ def menu_webshare_residential() -> None:
                 console.print(f"  [dim]-[/dim] [cyan]{p}[/cyan]")
 
 
+def _mask_proxy(line: str) -> str:
+    """Redact password(s) in a proxy line for safe display."""
+    if "@" in line:
+        cred, host = line.rsplit("@", 1)
+        scheme = ""
+        if "://" in cred:
+            scheme, cred = cred.split("://", 1)
+        user = cred.split(":", 1)[0]
+        return f"{scheme + '://' if scheme else ''}{user}:***@{host}"
+    parts = line.split(":")
+    if len(parts) == 4:
+        return f"{parts[0]}:{parts[1]}:{parts[2]}:***"
+    return line
+
+
 def menu_proxy_checker() -> None:
-    console.print("\n[bold cyan]=== CHECK & TEST PROXY POOL ===[/bold cyan]")
-    cmd = [sys.executable, "-m", "llmharvester.cli", "proxies", "--check"]
-    subprocess.run(cmd)
+    header = "# One proxy per line, host:port:user:pass or http://user:pass@host:port"
+
+    def _file() -> Path:
+        return _proxy_source() or Path("proxies.txt")
+
+    def _read() -> list[str]:
+        p = _file()
+        if not p.exists():
+            return []
+        return [l.strip() for l in p.read_text().splitlines() if l.strip() and not l.lstrip().startswith("#")]
+
+    def _write(items: list[str]) -> None:
+        _file().write_text(header + "\n" + ("\n".join(items) + "\n" if items else ""))
+
+    while True:
+        src = _file()
+        console.print(f"\n[bold cyan]=== CHECK & TEST PROXY POOL ===[/bold cyan] [dim](source: {src})[/dim]")
+        subprocess.run([sys.executable, "-m", "llmharvester.cli", "proxies", "--check"])
+
+        entries = _read()
+        if not entries:
+            console.print("[dim]No proxies in pool.[/dim]")
+            return
+
+        console.print("\n[bold]Proxy Pool Actions:[/bold]")
+        console.print("  [1] Delete a proxy by number")
+        console.print("  [2] Delete a proxy by pasting its line")
+        console.print("  [3] Delete ALL proxies")
+        console.print("  [0] Back\n")
+        act = Prompt.ask("Choice", choices=["1", "2", "3", "0"], default="0")
+        if act == "0":
+            return
+        if act == "1":
+            for i, line in enumerate(entries, 1):
+                console.print(f"  [{i}] {_mask_proxy(line)}")
+            try:
+                n = int(Prompt.ask("Number to delete (0 = cancel)", default="0"))
+            except ValueError:
+                n = 0
+            if 1 <= n <= len(entries):
+                removed = entries.pop(n - 1)
+                _write(entries)
+                console.print(f"[green]Deleted #{n}: {_mask_proxy(removed)}[/green]")
+        elif act == "2":
+            raw = Prompt.ask("Paste the proxy line to delete", default="").strip()
+            if raw and raw in entries:
+                entries = [e for e in entries if e != raw]
+                _write(entries)
+                console.print(f"[green]Deleted: {_mask_proxy(raw)}[/green]")
+            elif raw:
+                console.print("[yellow]Proxy line not found.[/yellow]")
+        elif act == "3":
+            if Confirm.ask("Delete ALL proxies (proxies.txt + fallback files)?", default=False):
+                for cand in ["proxies.txt", "output/webshare_residential.txt", "output/live_elite.txt"]:
+                    c = Path(cand)
+                    if c.exists():
+                        c.write_text(header + "\n")
+                console.print("[green]All proxies cleared (proxies.txt + output fallbacks).[/green]")
 
 
 def menu_grok_farm() -> None:
@@ -415,12 +501,15 @@ def menu_grok_farm() -> None:
     except Exception as e:
         console.print(f"[yellow]Browser detection warning: {e}[/yellow]")
 
-    cnt_str = Prompt.ask("Target number of Grok accounts to harvest?", default="1")
+    cnt_str = Prompt.ask("Target number of Grok accounts to harvest? (0 = cancel)", default="1")
     try:
         total_grok = int(cnt_str)
-        if total_grok < 1:
-            total_grok = 1
     except ValueError:
+        total_grok = 1
+    if total_grok == 0:
+        console.print("[yellow]Cancelled.[/yellow]")
+        return
+    if total_grok < 1:
         total_grok = 1
 
     console.print("\nBrowser Display Mode:")
@@ -490,74 +579,78 @@ def menu_warp() -> None:
         find_singbox,
     )
 
-    stat = is_warp_running()
-    sbox = find_singbox()
-    prof = load_warp_profile()
+    while True:
+        stat = is_warp_running()
+        sbox = find_singbox()
+        prof = load_warp_profile()
 
-    table = Table(title="Current WARP Status")
-    table.add_column("Property", style="bold cyan")
-    table.add_column("Value")
-    table.add_row("Proxy Endpoint", "http://127.0.0.1:10808")
-    table.add_row(
-        "Daemon Status",
-        "[bold green]Online / Active[/bold green]" if stat else "[yellow]Offline / Standby[/yellow]",
-    )
-    table.add_row(
-        "sing-box Binary",
-        f"[green]{sbox}[/green]" if sbox else "[red]Not Found[/red]",
-    )
-    table.add_row(
-        "Profile Config",
-        "[green]Ready (output/warp/)[/green]" if prof else "[dim]Not Generated[/dim]",
-    )
-    if stat:
-        table.add_row("Exit IP", str(stat.get("query", "Unknown")))
-        table.add_row("Country", str(stat.get("country", "Unknown")))
-        table.add_row("ISP / Org", f"{stat.get('isp', '')} ({stat.get('org', '')})")
-        table.add_row("Hosting / Datacenter", str(stat.get("hosting", False)))
-    console.print(table)
+        table = Table(title="Current WARP Status")
+        table.add_column("Property", style="bold cyan")
+        table.add_column("Value")
+        table.add_row("Proxy Endpoint", "http://127.0.0.1:10808")
+        table.add_row(
+            "Daemon Status",
+            "[bold green]Online / Active[/bold green]" if stat else "[yellow]Offline / Standby[/yellow]",
+        )
+        table.add_row(
+            "sing-box Binary",
+            f"[green]{sbox}[/green]" if sbox else "[red]Not Found[/red]",
+        )
+        table.add_row(
+            "Profile Config",
+            "[green]Ready (output/warp/)[/green]" if prof else "[dim]Not Generated[/dim]",
+        )
+        if stat:
+            table.add_row("Exit IP", str(stat.get("query", "Unknown")))
+            table.add_row("Country", str(stat.get("country", "Unknown")))
+            table.add_row("ISP / Org", f"{stat.get('isp', '')} ({stat.get('org', '')})")
+            table.add_row("Hosting / Datacenter", str(stat.get("hosting", False)))
+        console.print(table)
 
-    console.print("\nActions:")
-    console.print("  [1] Start WARP Proxy Daemon (:10808)")
-    console.print("  [2] Stop WARP Proxy Daemon")
-    console.print("  [3] Register Fresh Account / Generate New Profile")
-    console.print("  [4] Test Connectivity & IP Leak")
-    console.print("  [0] Back to main menu\n")
+        console.print("\nActions:")
+        console.print("  [1] Start WARP Proxy Daemon (:10808)")
+        console.print("  [2] Stop WARP Proxy Daemon")
+        console.print("  [3] Register Fresh Account / Generate New Profile")
+        console.print("  [4] Test Connectivity & IP Leak")
+        console.print("  [0] Back to main menu\n")
 
-    act = Prompt.ask("Choice", choices=["1", "2", "3", "4", "0"], default="1")
-    if act == "0":
-        return
-    if act == "1":
-        console.print("[cyan]Starting Cloudflare WARP proxy on http://127.0.0.1:10808...[/cyan]")
-        try:
-            url, s = ensure_warp_proxy()
-            console.print(
-                f"[bold green][✓] WARP proxy running on {url} (Exit IP: {s.get('query')}, {s.get('org')})[/bold green]"
-            )
-        except Exception as e:
-            console.print(f"[bold red]Failed to start WARP:[/bold red] {e}")
-    elif act == "2":
-        stop_warp_proxy()
-        console.print("[bold green][✓] WARP proxy daemon stopped.[/bold green]")
-    elif act == "3":
-        if Confirm.ask("Generate a fresh Cloudflare WARP WireGuard profile now?", default=True):
-            console.print("[cyan]Registering with Cloudflare REST API...[/cyan]")
-            new_prof = register_warp_account()
-            if new_prof:
-                wg_file, sb_file = save_warp_profile(new_prof)
+        act = Prompt.ask("Choice", choices=["1", "2", "3", "4", "0"], default="1")
+        if act == "0":
+            return
+        if act == "1":
+            console.print("[cyan]Starting Cloudflare WARP proxy on http://127.0.0.1:10808...[/cyan]")
+            try:
+                url, s = ensure_warp_proxy()
                 console.print(
-                    f"[bold green][✓] Successfully registered! Saved to {wg_file} and {sb_file}[/bold green]"
+                    f"[bold green][✓] WARP proxy running on {url} (Exit IP: {s.get('query')}, {s.get('org')})[/bold green]"
                 )
+            except Exception as e:
+                console.print(f"[bold red]Failed to start WARP:[/bold red] {e}")
+        elif act == "2":
+            stop_warp_proxy()
+            console.print("[bold green][✓] WARP proxy daemon stopped.[/bold green]")
+        elif act == "3":
+            if Confirm.ask("Generate a fresh Cloudflare WARP WireGuard profile now?", default=True):
+                console.print("[cyan]Registering with Cloudflare REST API...[/cyan]")
+                new_prof = register_warp_account()
+                if new_prof:
+                    wg_file, sb_file = save_warp_profile(new_prof)
+                    console.print(
+                        f"[bold green][✓] Successfully registered! Saved to {wg_file} and {sb_file}[/bold green]"
+                    )
+                else:
+                    console.print("[bold red]Failed to register WARP account.[/bold red]")
+        elif act == "4":
+            s = is_warp_running()
+            if s:
+                console.print(f"[bold green][✓] Active Exit IP:[/bold green] {s.get('query')} ({s.get('country')})")
+                console.print(f"[bold green][✓] Organization:[/bold green] {s.get('org')}")
+                console.print(f"[bold green][✓] Hosting flag:[/bold green] {s.get('hosting')}")
             else:
-                console.print("[bold red]Failed to register WARP account.[/bold red]")
-    elif act == "4":
-        s = is_warp_running()
-        if s:
-            console.print(f"[bold green][✓] Active Exit IP:[/bold green] {s.get('query')} ({s.get('country')})")
-            console.print(f"[bold green][✓] Organization:[/bold green] {s.get('org')}")
-            console.print(f"[bold green][✓] Hosting flag:[/bold green] {s.get('hosting')}")
-        else:
-            console.print("[yellow]WARP daemon is not currently running. Select option 1 to start it.[/yellow]")
+                console.print("[yellow]WARP daemon is not currently running. Select option 1 to start it.[/yellow]")
+
+        # Stay in the WARP manager (re-render status) instead of returning to main menu.
+        Prompt.ask("\n[dim]Press Enter to return to WARP status...[/dim]")
 
 
 def main() -> None:
