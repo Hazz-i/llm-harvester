@@ -48,6 +48,8 @@ class LocalCDP:
         self._session_id: str | None = None
         self._target_id: str | None = None
         self._reader_task: asyncio.Task | None = None
+        self._events: list[dict[str, Any]] = []
+        self._capture_events = False
 
     async def connect(self) -> "LocalCDP":
         import websockets
@@ -89,13 +91,16 @@ class LocalCDP:
             except json.JSONDecodeError:
                 continue
             mid = msg.get("id")
-            if mid is not None and mid in self._pending:
-                fut = self._pending.pop(mid)
-                if not fut.done():
-                    if "error" in msg:
-                        fut.set_exception(RuntimeError(str(msg["error"])))
-                    else:
-                        fut.set_result(msg.get("result", {}))
+            if mid is not None:
+                if mid in self._pending:
+                    fut = self._pending.pop(mid)
+                    if not fut.done():
+                        if "error" in msg:
+                            fut.set_exception(RuntimeError(str(msg["error"])))
+                        else:
+                            fut.set_result(msg.get("result", {}))
+            elif self._capture_events:
+                self._events.append(msg)
 
     async def _send(self, method: str, params: dict[str, Any], session: bool = False) -> Any:
         assert self._ws is not None

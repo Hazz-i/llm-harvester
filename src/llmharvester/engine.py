@@ -295,10 +295,15 @@ class Harvester:
         if cfg.target == "zai":
             cdp = await self._make_cdp(proxy)
             try:
-                from .zai import ZaiHarvester
+                from .zai import ZaiHarvester, load_unclaimed
 
                 creator = ZaiHarvester(cdp, mail, config=cfg.zai, log=self.log)
-                res = await creator.harvest()
+                existing = load_unclaimed(cfg.output_dir)
+                if existing is not None:
+                    self.log(f"[zai] Akun harvest belum claim -> klaim saja (tanpa daftar): {existing.get('email')}")
+                    res = await creator.claim_existing(existing)
+                else:
+                    res = await creator.harvest()
                 record = res.as_dict()
                 record["index"] = index
                 record["finished_at"] = time.time()

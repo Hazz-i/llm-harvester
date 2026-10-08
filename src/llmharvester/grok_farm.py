@@ -349,6 +349,23 @@ class GmailImapService:
 
         return self._poll(timeout_sec, matcher)
 
+    def poll_verify_link(
+        self,
+        timeout_sec: int = 90,
+        senders: Tuple[str, ...] = (),
+        needle: str = "verify_email",
+    ) -> Optional[str]:
+        """Poll for a verification LINK (containing `needle`) from the given senders."""
+        def matcher(from_hdr: str, subject: str, body: str) -> Optional[str]:
+            if senders and not any(s in from_hdr for s in senders):
+                return None
+            for url in re.findall(r"https?://[^\s\"'<>)]+", subject + " " + body):
+                if needle in url:
+                    return url
+            return None
+
+        return self._poll(timeout_sec, matcher)
+
 
 class MailTmService:
     """Mengelola pembuatan email instan dan polling kode OTP via Mail.tm & Mail.gw (serasi dengan ZeroTwo/TokenHarbor)."""

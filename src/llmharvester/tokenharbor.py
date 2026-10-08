@@ -31,13 +31,14 @@ class HarvestedKey:
     api_key: str = ""
     created_at: float = field(default_factory=time.time)
     error: str | None = None
+    extra: dict[str, Any] = field(default_factory=dict)
 
     @property
     def ok(self) -> bool:
         return bool(self.api_key) and self.error is None
 
     def as_dict(self) -> dict[str, Any]:
-        return {
+        out = {
             "platform": self.platform,
             "email": self.email,
             "password": self.password,
@@ -45,6 +46,9 @@ class HarvestedKey:
             "created_at": self.created_at,
             "error": self.error,
         }
+        if self.extra:
+            out["extra"] = self.extra
+        return out
 
 
 def _rand_key_name(prefix: str = "prod-th") -> str:
