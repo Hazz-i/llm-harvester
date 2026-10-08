@@ -653,6 +653,99 @@ def menu_warp() -> None:
         Prompt.ask("\n[dim]Press Enter to return to WARP status...[/dim]")
 
 
+ENV_PATH = Path(".env")
+_SECRET_HINTS = ("PASSWORD", "API_KEY", "SECRET", "TOKEN")
+
+
+def _env_map() -> dict[str, str]:
+    out: dict[str, str] = {}
+    if not ENV_PATH.exists():
+        return out
+    for line in ENV_PATH.read_text().splitlines():
+        s = line.strip()
+        if not s or s.startswith("#") or "=" not in s:
+            continue
+        k, v = s.split("=", 1)
+        out[k.strip()] = v.strip()
+    return out
+
+
+def _env_set(updates: dict[str, str]) -> None:
+    lines = ENV_PATH.read_text().splitlines() if ENV_PATH.exists() else []
+    remaining = dict(updates)
+    new_lines: list[str] = []
+    for line in lines:
+        s = line.strip()
+        if s and not s.startswith("#") and "=" in s:
+            k = s.split("=", 1)[0].strip()
+            if k in remaining:
+                new_lines.append(f"{k}={remaining.pop(k)}")
+                continue
+        new_lines.append(line)
+    for k, v in remaining.items():
+        new_lines.append(f"{k}={v}")
+    if new_lines and new_lines[-1].strip():
+        new_lines.append("")
+    ENV_PATH.write_text("\n".join(new_lines))
+
+
+def _mask_secret(v: str) -> str:
+    if not v:
+        return "(empty)"
+    return v[:6] + "..." if len(v) > 10 else "***"
+
+
+def _prompt_env(label: str, key: str) -> None:
+    cur = _env_map().get(key, "")
+    shown = _mask_secret(cur) if any(h in key.upper() for h in _SECRET_HINTS) else (cur or "(empty)")
+    val = Prompt.ask(f"{label} [{shown}]", default="").strip()
+    if val:
+        _env_set({key: val})
+        console.print(f"[green]Saved {key}.[/green]")
+    else:
+        console.print("[dim]Kept unchanged.[/dim]")
+
+
+def menu_config() -> None:
+    while True:
+        console.print("\n[bold cyan]=== CONFIGURATION ===[/bold cyan] [dim](.env)[/dim]")
+        console.print("  [1] 9Router Gateway (URL, API key, password)")
+        console.print("  [2] IMAP catch-all (TokenMix & Grok)")
+        console.print("  [3] Harvester defaults (target, concurrency)")
+        console.print("  [4] Browser CDP ws")
+        console.print("  [5] Show current configuration")
+        console.print("  [0] Back\n")
+
+        act = Prompt.ask("Choice", choices=["1", "2", "3", "4", "5", "0"], default="0")
+        if act == "0":
+            return
+        if act == "1":
+            _prompt_env("9Router URL (NINEROUTER_URL)", "NINEROUTER_URL")
+            _prompt_env("9Router API key (NINEROUTER_API_KEY)", "NINEROUTER_API_KEY")
+            _prompt_env("9Router password (NINEROUTER_PASSWORD)", "NINEROUTER_PASSWORD")
+        elif act == "2":
+            _prompt_env("IMAP enabled true/false (IMAP_ENABLED)", "IMAP_ENABLED")
+            _prompt_env("IMAP host (IMAP_HOST)", "IMAP_HOST")
+            _prompt_env("IMAP port (IMAP_PORT)", "IMAP_PORT")
+            _prompt_env("IMAP user / email (IMAP_USER)", "IMAP_USER")
+            _prompt_env("IMAP app password (IMAP_PASSWORD)", "IMAP_PASSWORD")
+            _prompt_env("Catch-all domain (EMAIL_DOMAIN)", "EMAIL_DOMAIN")
+        elif act == "3":
+            _prompt_env("Default target (LLM_TARGET)", "LLM_TARGET")
+            _prompt_env("Concurrency (LLM_CONCURRENCY)", "LLM_CONCURRENCY")
+        elif act == "4":
+            _prompt_env("Browser CDP ws (LLM_CDP_WS)", "LLM_CDP_WS")
+        elif act == "5":
+            data = _env_map()
+            if not data:
+                console.print("[dim].env is empty.[/dim]")
+            for k in sorted(data):
+                v = _mask_secret(data[k]) if any(h in k.upper() for h in _SECRET_HINTS) else data[k]
+                console.print(f"  [cyan]{k}[/cyan] = {v}")
+
+        Prompt.ask("\n[dim]Press Enter to return to Configuration...[/dim]")
+
+
 def main() -> None:
     while True:
         os.system("clear" if os.name == "posix" else "cls")
@@ -666,9 +759,10 @@ def main() -> None:
         console.print("  [5] Sync Accounts & Models to 9Router Gateway")
         console.print("  [6] Refresh ZeroTwo Tokens")
         console.print("  [7] Cloudflare WARP Proxy Manager (WireGuard :10808)")
+        console.print("  [8] Configuration (IMAP, 9Router, defaults)")
         console.print("  [0] Exit\n")
 
-        pilihan = Prompt.ask("Select option", choices=["1", "2", "3", "4", "5", "6", "7", "0"], default="1")
+        pilihan = Prompt.ask("Select option", choices=["1", "2", "3", "4", "5", "6", "7", "8", "0"], default="1")
 
         if pilihan == "1":
             menu_run_harvester()
@@ -684,6 +778,8 @@ def main() -> None:
             menu_refresh_tokens()
         elif pilihan == "7":
             menu_warp()
+        elif pilihan == "8":
+            menu_config()
         elif pilihan == "0":
             console.print("\n[dim]Goodbye![/dim]\n")
             break
