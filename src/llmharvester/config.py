@@ -42,6 +42,14 @@ class TokenMixConfig:
     api_base: str = "https://api.tokenmix.ai/v1"
     node_name: str = "TokenMix"
     node_prefix: str = "tokenmix"
+    # Optional IMAP catch-all / work domain (TokenMix rejects disposable domains
+    # but accepts custom domains). Each account gets a unique generated address.
+    imap_enabled: bool = False
+    imap_host: str = "imap.gmail.com"
+    imap_port: int = 993
+    imap_user: str | None = None
+    imap_password: str | None = None
+    email_domain: str | None = None
 
 
 @dataclass
@@ -59,6 +67,20 @@ class ElevenLabsConfig:
     imap_password: str | None = None
     email_domain: str | None = None
 
+
+
+@dataclass
+class GrokConfig:
+    """9Router node settings for Grok xAI accounts harvested by the farm."""
+
+    api_base: str = "https://api.x.ai/v1"
+    node_name: str = "Grok xAI"
+    node_prefix: str = "grok"
+    # 9Router provider slug to insert connections under:
+    #   "grok-web" -> Grok Web (Subscription)  [sso cookie]  <-- matches harvested accounts
+    #   "grok-cli" -> Grok CLI (Grok Build)     [OAuth device-code]
+    #   "xai"      -> xAI (Grok)                [OAuth or API key]
+    provider: str = "grok-web"
 
 
 @dataclass
@@ -109,6 +131,7 @@ class HarvesterConfig:
     tokenharbor: TokenHarborConfig = field(default_factory=TokenHarborConfig)
     tokenmix: TokenMixConfig = field(default_factory=TokenMixConfig)
     elevenlabs: ElevenLabsConfig = field(default_factory=ElevenLabsConfig)
+    grok: GrokConfig = field(default_factory=GrokConfig)
     router: RouterConfig = field(default_factory=RouterConfig)
     browser: BrowserConfig = field(default_factory=BrowserConfig)
     proxy: ProxyConfig = field(default_factory=ProxyConfig)
@@ -149,16 +172,22 @@ class HarvesterConfig:
         cfg.tokenmix.node_name = os.getenv("TM_NODE_NAME", cfg.tokenmix.node_name)
         cfg.tokenmix.node_prefix = os.getenv("TM_NODE_PREFIX", cfg.tokenmix.node_prefix)
         cfg.tokenmix.referral_code = os.getenv("TM_REFERRAL") or cfg.tokenmix.referral_code
+        cfg.tokenmix.imap_user = os.getenv("IMAP_USER") or None
+        cfg.tokenmix.imap_password = os.getenv("IMAP_PASSWORD") or None
+        cfg.tokenmix.imap_host = os.getenv("IMAP_HOST", cfg.tokenmix.imap_host)
+        if os.getenv("IMAP_ENABLED", "").lower() in ("1", "true", "yes"):
+            cfg.tokenmix.imap_enabled = True
+        cfg.tokenmix.email_domain = os.getenv("EMAIL_DOMAIN") or None
         cfg.elevenlabs.key_name_prefix = os.getenv("EL_KEY_PREFIX", cfg.elevenlabs.key_name_prefix)
         cfg.elevenlabs.api_base = os.getenv("EL_API_BASE", cfg.elevenlabs.api_base)
         cfg.elevenlabs.node_name = os.getenv("EL_NODE_NAME", cfg.elevenlabs.node_name)
         cfg.elevenlabs.node_prefix = os.getenv("EL_NODE_PREFIX", cfg.elevenlabs.node_prefix)
-        cfg.elevenlabs.imap_user = os.getenv("IMAP_USER") or None
-        cfg.elevenlabs.imap_password = os.getenv("IMAP_PASSWORD") or None
-        cfg.elevenlabs.imap_host = os.getenv("IMAP_HOST", cfg.elevenlabs.imap_host)
-        if os.getenv("IMAP_ENABLED", "").lower() in ("1", "true", "yes"):
-            cfg.elevenlabs.imap_enabled = True
-        cfg.elevenlabs.email_domain = os.getenv("EMAIL_DOMAIN") or None
+        # NOTE: IMAP/catch-all is used only by TokenMix (and Grok). ElevenLabs, Token
+        # Harbor and ZeroTwo use disposable mail.tm mailboxes (self.mail).
+        cfg.grok.api_base = os.getenv("GROK_API_BASE", cfg.grok.api_base)
+        cfg.grok.node_name = os.getenv("GROK_NODE_NAME", cfg.grok.node_name)
+        cfg.grok.node_prefix = os.getenv("GROK_NODE_PREFIX", cfg.grok.node_prefix)
+        cfg.grok.provider = os.getenv("GROK_PROVIDER", cfg.grok.provider)
         cfg.router.base_url = os.getenv("NINEROUTER_URL", cfg.router.base_url)
         cfg.router.api_key = os.getenv("NINEROUTER_API_KEY", cfg.router.api_key)
         cfg.router.password = os.getenv("NINEROUTER_PASSWORD") or None
@@ -203,6 +232,7 @@ class HarvesterConfig:
             zerotwo=ZeroTwoConfig(**data.get("zerotwo", {})),
             tokenharbor=TokenHarborConfig(**data.get("tokenharbor", {})),
             tokenmix=TokenMixConfig(**data.get("tokenmix", {})),
+            grok=GrokConfig(**data.get("grok", {})),
             router=RouterConfig(**data.get("router", {})),
             browser=BrowserConfig(**data.get("browser", {})),
             proxy=ProxyConfig(**data.get("proxy", {})),

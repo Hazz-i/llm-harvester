@@ -31,6 +31,11 @@ api_base = "https://api.tokenmix.ai/v1"
 node_name = "TokenMix"
 node_prefix = "tokenmix"
 
+[grok]
+api_base = "https://api.x.ai/v1"
+node_name = "Grok xAI"
+node_prefix = "grok"
+
 [router]
 enabled = true
 base_url = "http://localhost:20128"

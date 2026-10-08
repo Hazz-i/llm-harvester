@@ -33,11 +33,11 @@
    - Automatic Cloudflare Turnstile verification detection and solving.
    - Auto-detects display mode requirements (forcing Visible Window for Turnstile challenges when needed).
 6. **Credential Harvesting & 9Router Auto-Connect**:
-   - **Token Harbor**: Generates `thk_live_...` API keys, extracts/syncs 20+ model IDs, and auto-registers into **9Router** as a native OpenAI-compatible provider node.
-   - **TokenMix**: Generates `sk-tm-...` API keys, extracts/syncs 22+ model IDs, and auto-registers into **9Router** as a native OpenAI-compatible provider node.
-   - **ElevenLabs**: Generates `xi-api-key` (10,000 characters free quota), bypasses onboarding wizard, verifies email via `mail.tm` or IMAP catch-all, and syncs TTS voice models into **9Router**.
+   - **Token Harbor**: Generates `thk_live_...` API keys, extracts/syncs 20+ model IDs, auto-registers into **9Router** as an OpenAI-compatible node, and turns ON the dashboard **"Free models enabled"** toggle right after the key is created.
+   - **TokenMix**: Generates `sk-tm-...` API keys, extracts/syncs 22+ model IDs, and auto-registers into **9Router** as an OpenAI-compatible node. Uses a **catch-all IMAP mailbox** (`<rand>@your-domain`) so one mailbox backs unlimited accounts (TokenMix rejects disposable mail.tm domains and normalizes Gmail aliases).
+   - **ElevenLabs**: Generates `xi-api-key` (`sk_...`, 10,000 free chars), bypasses the onboarding wizard, verifies email via **mail.tm**, and inserts the key into **9Router's Text-to-Speech (TTS) media provider** (endpoint `https://api.elevenlabs.io/v1/text-to-speech`, header `xi-api-key`) — not a chat node.
    - **ZeroTwo**: Intercepts Supabase JWTs (`access_token`, `refresh_token`), cookies (`cf_clearance`, `__csrf`), CSRF tokens, and registers into **9Router** via a local OpenAI shim.
-   - **Grok xAI**: Automates residential proxy account creation with Gmail subaddress aliases and auto-OTP.
+   - **Grok xAI**: Automates account creation via a **catch-all domain mailbox** (`gk_<rand>@your-domain`, OTP read over IMAP), captures the grok.com `sso` cookie, and inserts it into **9Router** (`grok-web` provider, cookie auth).
 7. **Crash-Safe Ledger Output**: Writes append-only JSONL ledgers (`sessions.jsonl`, `tokenharbor_keys.jsonl`, `tokenmix_keys.jsonl`, `elevenlabs_keys.jsonl`, `elevenlabs_keys.txt`, `grok_accounts.txt`).
 
 ## Architecture
@@ -222,7 +222,7 @@ NINEROUTER_PASSWORD=your_dashboard_password
 > [!TIP]
 > **Farming Token Harbor, TokenMix, or ElevenLabs?**  
 > That's all you need! These platforms output native API keys (`thk_live_...`, `sk-tm-...`, and `xi-api-key`) and connect directly to cloud APIs. **No VPS, no local shim, and no port 8787 required.** You can start harvesting immediately!
-> For ElevenLabs, email verification is performed automatically via `mail.tm` by default, or you can optionally configure `IMAP_USER`, `IMAP_PASSWORD`, and `IMAP_ENABLED=true` in `.env` for custom catch-all domains.
+> For ElevenLabs, email verification uses **mail.tm** by default. The **IMAP catch-all** (`IMAP_USER`, `IMAP_PASSWORD`, `IMAP_ENABLED=true`, `EMAIL_DOMAIN`) is used **only by TokenMix and Grok**, which reject disposable domains / need a unique address on a custom domain:
 
 #### B. ZeroTwo-Specific Configuration (Requires Shim & Local/VPS Setup)
 Because ZeroTwo uses Supabase JWTs and session cookies instead of standard API keys, it requires the OpenAI-compatible translation shim (`:8787`):
@@ -235,7 +235,23 @@ LLM_SHIM_BASE_URL=http://localhost:8787/v1
 # LLM_REMOTE_SYNC=user@vps:/opt/llm-harvester/harvest/sessions.jsonl
 ```
 
-*(Note: `.env` or `config.toml` is automatically loaded by `llm-harvester`)*.
+*(Note: `.env` or `config.toml` is automatically loaded by `llm-harvester`)*
+
+#### C. IMAP Catch-All (TokenMix & Grok only)
+TokenMix rejects disposable domains and normalizes Gmail aliases, and Grok needs a unique address per account. Point a **catch-all domain** at a mailbox you can read over IMAP:
+
+```env
+EMAIL_DOMAIN=hazz.biz.id
+IMAP_ENABLED=true
+IMAP_HOST=imap.gmail.com
+IMAP_PORT=993
+IMAP_USER=you@gmail.com
+IMAP_PASSWORD=your-16-char-app-password
+```
+
+Grok uses the same creds (via `GMAIL_USER`/`GMAIL_APP_PASSWORD` if set, else `IMAP_*`). All other targets (ElevenLabs, Token Harbor, ZeroTwo) use `mail.tm`.
+
+Grok 9Router insert can be tuned with `GROK_PROVIDER` (default `grok-web`; also `grok-cli` or `xai`) and `GROK_NODE_NAME` / `GROK_NODE_PREFIX` / `GROK_API_BASE`..
 
 ### 3. Create & Harvest Accounts
 
@@ -252,8 +268,8 @@ llm-harvester run
 Select farming target:
   [1] ZeroTwo      (app.zerotwo.ai)    -> JWT Session, Cookies, 9Router
   [2] Token Harbor (tokenharbor.ai)    -> API Key (thk_live_...), mail.tm
-  [3] TokenMix     (tokenmix.ai)       -> API Key (sk-tm-...), mail.tm
-  [4] ElevenLabs   (elevenlabs.io)     -> API Key (xi-api-key), mail.tm / IMAP
+  [3] TokenMix     (tokenmix.ai)       -> API Key (sk-tm-...) + catch-all IMAP
+  [4] ElevenLabs   (elevenlabs.io)     -> API Key (sk_...), mail.tm -> 9Router TTS
 Choice [1-4] (default 1):
 ```
 
@@ -262,10 +278,10 @@ Choice [1-4] (default 1):
 # Farm 5 Token Harbor accounts (direct API keys -> 9Router + models synced)
 llm-harvester run --target tokenharbor --count 5
 
-# Farm 3 TokenMix accounts (direct API keys -> 9Router + models synced)
+# Farm 3 TokenMix accounts (sk-tm-... keys; catch-all IMAP; -> 9Router node)
 llm-harvester run --target tokenmix --count 3
 
-# Farm 2 ElevenLabs accounts (10,000 free chars each -> 9Router + TTS models synced)
+# Farm 2 ElevenLabs accounts (sk_... xi-api-key; mail.tm; -> 9Router TTS provider)
 llm-harvester run --target elevenlabs --count 2
 
 # Farm 2 ZeroTwo accounts (harvests sessions -> 9Router via shim)

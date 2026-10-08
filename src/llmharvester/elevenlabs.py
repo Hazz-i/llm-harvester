@@ -18,6 +18,7 @@ import secrets
 import string
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -245,6 +246,21 @@ class ElevenLabsCreator:
         self.log("[elevenlabs] Turnstile wait reached timeout, continuing...")
         return False
 
+    async def _capture_screenshot(self, filename: str = "elevenlabs_debug.png") -> Path | None:
+        """Helper to capture and save screenshot for debugging."""
+        try:
+            if hasattr(self.cdp, "screenshot"):
+                raw = await self.cdp.screenshot()
+                if raw:
+                    out_path = Path("harvest") / filename
+                    out_path.parent.mkdir(parents=True, exist_ok=True)
+                    out_path.write_bytes(raw)
+                    self.log(f"[elevenlabs] Screenshot saved to {out_path}")
+                    return out_path
+        except Exception as e:
+            self.log(f"[elevenlabs] Screenshot capture failed: {e}")
+        return None
+
     async def _scrape_key_from_page(self) -> str:
         """Scrapes API key from DOM (inputs, code blocks, or data attributes)."""
         res = await self.cdp.evaluate(r"""(()=>{
@@ -253,9 +269,17 @@ class ElevenLabsCreator:
                 s = s.trim();
                 if (/^[a-f0-9]{32}$/i.test(s)) return true;
                 if (/^(?:sk_|xi_)[a-zA-Z0-9_\-]{28,100}$/i.test(s)) return true;
-                if (/^[a-zA-Z0-9]{32,64}$/.test(s) && !s.includes(' ')) return true;
+                if (/^[a-zA-Z0-9]{32,64}$/.test(s) && !s.includes(' ') && !/^[0-9]+$/.test(s)) return true;
                 return false;
             };
+
+            // 0. Check window.__capturedApiKeys
+            if (window.__capturedApiKeys && Array.isArray(window.__capturedApiKeys)) {
+                for (const item of window.__capturedApiKeys) {
+                    const k = (typeof item === 'string' ? item : (item && item.key ? item.key : '')).trim();
+                    if (isKey(k)) return k;
+                }
+            }
 
             // 1. Input/textarea with value matching key pattern
             const inputs = Array.from(document.querySelectorAll('input, textarea'));
@@ -292,6 +316,101 @@ class ElevenLabsCreator:
             return '';
         })()""")
         return str(res).strip() if res else ""
+
+    async def _configure_api_key_modal(self) -> None:
+        """Configure API key modal with Restrict Key enabled and full permissions (Access & Write)."""
+        # 1. Fill key name if input is empty
+        await self.cdp.evaluate("""(()=>{
+            const dialog = (()=>{const cs=Array.from(document.querySelectorAll('[role="dialog"],[aria-modal="true"]')).filter(d=>{const r=d.getBoundingClientRect();return r.width>0&&r.height>0;});return cs.find(d=>/endpoints|restrict key|create api key/i.test(d.innerText||''))||cs[cs.length-1]||document;})();
+            const nameInp = dialog.querySelector('input[placeholder*="name" i], input[placeholder*="key" i], input[name="name"], input#name, input[type="text"]:not([readonly])');
+            if (nameInp && !nameInp.value) {
+                nameInp.value = 'prod-harvest';
+                nameInp.dispatchEvent(new Event('input', {bubbles: true}));
+                nameInp.dispatchEvent(new Event('change', {bubbles: true}));
+            }
+        })()""")
+        await self._sleep(300)
+
+        # 2. Toggle 'Restrict Key' switch ON if not already active
+        self.log("[elevenlabs] Activating 'Restrict Key' switch...")
+        switch_result = await self.cdp.evaluate("""(()=>{
+            const dialog = (()=>{const cs=Array.from(document.querySelectorAll('[role="dialog"],[aria-modal="true"]')).filter(d=>{const r=d.getBoundingClientRect();return r.width>0&&r.height>0;});return cs.find(d=>/endpoints|restrict key|create api key/i.test(d.innerText||''))||cs[cs.length-1]||document;})();
+            let sw = null;
+
+            // Strategy 1: Look for element containing text 'Restrict Key'
+            const allEls = Array.from(dialog.querySelectorAll('div, label, section, p, span'));
+            for (const el of allEls) {
+                const t = (el.innerText || '').toLowerCase().trim();
+                if (t === 'restrict key' || (t.includes('restrict key') && !t.includes('ip') && !t.includes('auto-disable'))) {
+                    const container = el.closest('div[class*="flex"], div[class*="grid"], label, tr, li') || el.parentElement;
+                    if (container) {
+                        const found = container.querySelector('[role="switch"], button[data-state], input[type="checkbox"]');
+                        if (found) {
+                            sw = found;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // Strategy 2: Check switches by aria-label or fallback to first switch
+            if (!sw) {
+                const switches = Array.from(dialog.querySelectorAll('[role="switch"], button[data-state], input[type="checkbox"]'));
+                for (const candidate of switches) {
+                    const label = (candidate.getAttribute('aria-label') || '').toLowerCase();
+                    if (label.includes('restrict key') && !label.includes('ip')) {
+                        sw = candidate;
+                        break;
+                    }
+                }
+                if (!sw && switches.length > 0) {
+                    sw = switches[0];
+                }
+            }
+
+            if (sw) {
+                const isChecked = sw.getAttribute('aria-checked') === 'true' || 
+                                  sw.getAttribute('data-state') === 'checked' ||
+                                  sw.checked === true;
+                if (!isChecked) {
+                    sw.click();
+                    return 'toggled_on';
+                }
+                return 'already_on';
+            }
+            return 'not_found';
+        })()""")
+        self.log(f"[elevenlabs] Restrict Key status: {switch_result}")
+        await self._sleep(800)
+
+        # 3. Grant all endpoint permissions: click the leaf element labelled Access/Write
+        #    in every segmented control (modal rows, most permissive wins).
+        self.log("[elevenlabs] Granting all endpoint permissions (Access / Write)...")
+        perms_result = await self.cdp.evaluate("""(()=>{
+            const norm = (s) => (s || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+            const scope = (()=>{const cs=Array.from(document.querySelectorAll('[role="dialog"],[aria-modal="true"]')).filter(d=>{const r=d.getBoundingClientRect();return r.width>0&&r.height>0;});return cs.find(d=>/endpoints|restrict key|create api key/i.test(d.innerText||''))||cs[cs.length-1]||document;})();
+            const leaves = Array.from(scope.querySelectorAll('*')).filter(el => el.children.length === 0 && norm(el.textContent));
+            const labels = Array.from(new Set(leaves.map(el => norm(el.textContent)))).slice(0, 80);
+            let count = 0;
+            for (const want of ['write', 'full access', 'access']) {
+                for (const el of leaves) {
+                    if (norm(el.textContent) !== want) continue;
+                    const clickable = el.closest('button,[role="radio"],[role="tab"],[role="button"],label') || el;
+                    clickable.click();
+                    count++;
+                }
+            }
+            const html = (scope.outerHTML || '').slice(0, 1800);
+            return {count: count, labels: labels, html: html};
+        })()""")
+        if isinstance(perms_result, dict):
+            self.log(f"[elevenlabs] Permissions configured: {perms_result.get('count')} options selected.")
+            self.log(f"[elevenlabs] Modal leaf labels: {perms_result.get('labels')}")
+            if not perms_result.get("count"):
+                self.log(f"[elevenlabs] Modal HTML (truncated): {perms_result.get('html')}")
+        else:
+            self.log(f"[elevenlabs] Permissions configured: {perms_result}")
+        await self._sleep(800)
 
     async def _bypass_onboarding(self, max_secs: float = 45.0) -> bool:
         """Bypass the ElevenLabs onboarding wizard by interacting with all wizard steps (matching Key-Farm)."""
@@ -712,17 +831,68 @@ class ElevenLabsCreator:
         await self._sleep(1000)
 
         # 11. Scrape existing or create new API Key
-        # Setup copy event listener on the page to intercept any clipboard actions
+        # Setup clipboard & fetch interceptor hooks
         try:
-            await self.cdp.evaluate("""(()=>{
+            await self.cdp.evaluate(r"""(()=>{
+                window.__capturedApiKeys = window.__capturedApiKeys || [];
+
+                // 1. Hook clipboard.writeText
+                if (!window.__clipHooked && navigator.clipboard) {
+                    window.__clipHooked = true;
+                    const origWrite = navigator.clipboard.writeText;
+                    navigator.clipboard.writeText = async function(text) {
+                        if (text && typeof text === 'string') {
+                            const cleaned = text.trim();
+                            window.__lastCopied = cleaned;
+                            window.__capturedApiKeys.push({key: cleaned, source: 'clipboard'});
+                        }
+                        if (origWrite) {
+                            try { return await origWrite.apply(this, arguments); } catch(e){}
+                        }
+                    };
+                }
+
+                // 2. Hook document copy event
                 if (!window.__copyListenerAttached) {
                     window.__copyListenerAttached = true;
                     document.addEventListener('copy', (e) => {
                         try {
                             const text = (window.getSelection && window.getSelection().toString()) || '';
-                            if (text) window.__lastCopied = text;
+                            if (text) {
+                                window.__lastCopied = text.trim();
+                                window.__capturedApiKeys.push({key: text.trim(), source: 'copy_event'});
+                            }
                         } catch(err){}
                     }, true);
+                }
+
+                // 3. Hook window.fetch to inspect JSON responses for API keys
+                if (!window.__fetchHooked && window.fetch) {
+                    window.__fetchHooked = true;
+                    const origFetch = window.fetch;
+                    window.fetch = async function(...args) {
+                        const resp = await origFetch.apply(this, args);
+                        try {
+                            const clone = resp.clone();
+                            clone.json().then(data => {
+                                const checkObj = (obj) => {
+                                    if (!obj || typeof obj !== 'object') return;
+                                    for (const [k, v] of Object.entries(obj)) {
+                                        if (typeof v === 'string') {
+                                            const s = v.trim();
+                                            if (/^[a-f0-9]{32}$/i.test(s) || /^(?:sk_|xi_)[a-zA-Z0-9_\-]{28,100}$/i.test(s)) {
+                                                window.__capturedApiKeys.push({key: s, source: 'fetch_' + k});
+                                            }
+                                        } else if (typeof v === 'object') {
+                                            checkObj(v);
+                                        }
+                                    }
+                                };
+                                checkObj(data);
+                            }).catch(() => {});
+                        } catch(e){}
+                        return resp;
+                    };
                 }
             })()""")
         except Exception:
@@ -749,57 +919,35 @@ class ElevenLabsCreator:
 
             if create_btn_clicked:
                 await self._sleep(1500)
-
-                # Set key name in modal input if present
-                await self.cdp.evaluate("""(()=>{
-                    const dialog = document.querySelector('div[role="dialog"], [data-state="open"], [aria-modal="true"]');
-                    const scope = dialog || document;
-                    const nameInp = scope.querySelector('input[placeholder*="name" i], input[placeholder*="key" i], input[type="text"]:not([readonly])');
-                    if (nameInp && !nameInp.value) {
-                        nameInp.value = 'prod-harvest';
-                        nameInp.dispatchEvent(new Event('input', {bubbles: true}));
-                        nameInp.dispatchEvent(new Event('change', {bubbles: true}));
-                    }
-                })()""")
-                await self._sleep(300)
-
-                # Set permissions to Access / Write if present
-                await self.cdp.evaluate("""(()=>{
-                    const btns = Array.from(document.querySelectorAll('button, [role="radio"], label'));
-                    btns.forEach(b => {
-                        const t = (b.innerText || '').trim();
-                        if (t === 'Access' || t === 'Write' || t === 'Full access') b.click();
-                    });
-                })()""")
-                await self._sleep(300)
-
-                # Disable Restrict Key toggle if on
-                await self.cdp.evaluate("""(()=>{
-                    const sw = document.querySelector('[role="switch"]');
-                    if (sw && sw.getAttribute('aria-checked') === 'true') sw.click();
-                })()""")
-                await self._sleep(300)
+                await self._configure_api_key_modal()
 
                 # Submit modal
                 self.log("[elevenlabs] Submitting API Key creation modal...")
-                await self.cdp.evaluate("""(()=>{
-                    const dialog = document.querySelector('div[role="dialog"], [data-state="open"], [aria-modal="true"]');
-                    const scope = dialog || document;
-                    const btns = Array.from(scope.querySelectorAll('button')).filter(b => {
+                submit_btn = await self.cdp.evaluate("""(()=>{
+                    const dialog = (()=>{const cs=Array.from(document.querySelectorAll('[role="dialog"],[aria-modal="true"]')).filter(d=>{const r=d.getBoundingClientRect();return r.width>0&&r.height>0;});return cs.find(d=>/create api key|endpoints|restrict key/i.test(d.innerText||''))||cs[cs.length-1]||document;})();
+                    const btns = Array.from(dialog.querySelectorAll('button')).filter(b => !b.disabled);
+                    let target = btns.find(b => /create\\s*(api\\s*)?key/i.test((b.innerText || '').trim()));
+                    if (!target) target = btns.find(b => {
                         const t = (b.innerText || '').trim().toLowerCase();
-                        return (/(?:create|save|generate|done|confirm)/i.test(t) || b.type === 'submit') && !b.disabled;
+                        return /(save|create|confirm)/.test(t) && t !== 'cancel';
                     });
-                    if (btns.length > 0) btns[btns.length - 1].click();
+                    if (!target) target = btns.find(b => b.type === 'submit');
+                    if (target) { target.click(); return target.innerText.trim(); }
+                    return null;
                 })()""")
+                self.log(f"[elevenlabs] Clicked modal submit: {submit_btn}")
                 await self._sleep(1500)
 
-                # Confirm prompt if secondary dialog appears ("No Permissions Selected")
+                # Confirm prompt if secondary dialog appears ("No Permissions Selected" / "Are you sure")
                 await self.cdp.evaluate(r"""(()=>{
                     const dialogs = Array.from(document.querySelectorAll('div[role="dialog"], [role="alertdialog"]'));
                     for (const d of dialogs) {
                         const t = (d.innerText || '').toLowerCase();
-                        if (t.includes('no permissions') || t.includes('are you sure')) {
-                            const btns = Array.from(d.querySelectorAll('button')).filter(b => (b.innerText || '').trim().toLowerCase() === 'create key');
+                        if (t.includes('no permissions') || t.includes('are you sure') || t.includes('confirm')) {
+                            const btns = Array.from(d.querySelectorAll('button')).filter(b => {
+                                const bt = (b.innerText || '').trim().toLowerCase();
+                                return /(?:create|confirm|yes|save|proceed|continue)/i.test(bt) && !b.disabled;
+                            });
                             if (btns.length > 0) btns[btns.length - 1].click();
                         }
                     }
@@ -807,12 +955,11 @@ class ElevenLabsCreator:
                 await self._sleep(1000)
 
                 # Poll newly created key
-                for _ in range(15):
+                for poll_idx in range(25):
                     # Try clicking copy button in modal if present
                     await self.cdp.evaluate("""(()=>{
-                        const dialog = document.querySelector('div[role="dialog"], [data-state="open"], [aria-modal="true"]');
-                        const scope = dialog || document;
-                        const copyBtns = Array.from(scope.querySelectorAll('button, [role="button"]')).filter(b => {
+                        const dialog = document.querySelector('div[role="dialog"], [data-state="open"], [aria-modal="true"]') || document;
+                        const copyBtns = Array.from(dialog.querySelectorAll('button, [role="button"]')).filter(b => {
                             const t = (b.innerText || b.getAttribute('aria-label') || '').trim().toLowerCase();
                             return t.includes('copy');
                         });
@@ -827,7 +974,14 @@ class ElevenLabsCreator:
                     await self._sleep(800)
 
         if not api_key:
-            raise RuntimeError("Account created and verified, but API Key could not be extracted.")
+            err_details = await self.cdp.evaluate("""(()=>{
+                const el = document.querySelector('[role="alert"], .text-destructive, .text-red-500, [data-error]');
+                return el ? el.innerText.trim() : '';
+            })()""")
+            if err_details:
+                self.log(f"[elevenlabs] Modal error detected: {err_details}")
+            await self._capture_screenshot("elevenlabs_error.png")
+            raise RuntimeError(f"Account created and verified, but API Key could not be extracted.{f' Details: {err_details}' if err_details else ''}")
 
         # 12. Validate key against ElevenLabs REST API
         self.log(f"[elevenlabs] Validating harvested key: {api_key[:10]}...{api_key[-4:]}")

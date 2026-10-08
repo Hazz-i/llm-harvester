@@ -14,6 +14,7 @@ harvest/
 .DS_Store
 
 .codegraph/
+.opencode/
 chrome-data/
 config.toml
 output/warp/

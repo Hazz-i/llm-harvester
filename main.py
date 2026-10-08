@@ -451,18 +451,19 @@ def menu_grok_farm() -> None:
 def menu_router_sync() -> None:
     console.print("\n[bold cyan]=== SYNC TO 9ROUTER GATEWAY ===[/bold cyan]")
     console.print("Select data to synchronize with 9Router:")
-    console.print("  [1] All (ZeroTwo, Token Harbor, TokenMix, ElevenLabs)")
+    console.print("  [1] All (ZeroTwo, Token Harbor, TokenMix, ElevenLabs, Grok)")
     console.print("  [2] ZeroTwo Only")
     console.print("  [3] Token Harbor Only")
     console.print("  [4] TokenMix Only")
     console.print("  [5] ElevenLabs Only")
+    console.print("  [6] Grok xAI Only")
     console.print("  [0] Cancel")
 
-    choice = Prompt.ask("\nChoice", choices=["1", "2", "3", "4", "5", "0"], default="1")
+    choice = Prompt.ask("\nChoice", choices=["1", "2", "3", "4", "5", "6", "0"], default="1")
     if choice == "0":
         return
 
-    targets = {"1": "all", "2": "zerotwo", "3": "tokenharbor", "4": "tokenmix", "5": "elevenlabs"}
+    targets = {"1": "all", "2": "zerotwo", "3": "tokenharbor", "4": "tokenmix", "5": "elevenlabs", "6": "grok"}
     target = targets.get(choice, "all")
 
     cmd = [sys.executable, "-m", "llmharvester.cli", "sync", "--target", target]

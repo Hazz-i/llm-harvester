@@ -57,6 +57,7 @@ class TokenHarborCreator:
 
     APP_ORIGIN = "https://tokenharbor.ai"
     SIGNUP_URL = "https://tokenharbor.ai/login?mode=signup"
+    DASHBOARD_URL = "https://tokenharbor.ai/dashboard"
     DASHBOARD_KEYS_URL = "https://tokenharbor.ai/dashboard/api-keys"
 
     def __init__(
@@ -125,6 +126,90 @@ class TokenHarborCreator:
             await self._sleep(1500)
 
         self.log("[tokenharbor] Turnstile wait reached timeout, continuing anyway...")
+        return False
+
+    async def _enable_free_models(self, attempts: int = 6) -> bool:
+        """Turn ON the dashboard "Free models enabled" toggle (Data & privacy card).
+
+        Token Harbor's free models stay disabled until this switch is flipped, so
+        after a key is generated we visit the dashboard and make sure it is on.
+        """
+        self.log("[tokenharbor] Ensuring 'Free models enabled' toggle is ON...")
+        try:
+            await self.cdp.navigate(self.DASHBOARD_URL, wait_ms=8000)
+        except Exception as exc:
+            self.log(f"[tokenharbor] Dashboard navigation for free models failed: {exc}")
+            return False
+        await self._sleep(2500)
+
+        toggle_js = r"""(()=>{
+            const norm = (s) => (s || '').trim().toLowerCase();
+            const meta = (el) => norm(el.getAttribute('aria-label')) + ' ' +
+                                 norm(el.getAttribute('name')) + ' ' +
+                                 norm(el.getAttribute('id'));
+            const switchers = '[role="switch"], input[type="checkbox"], button[aria-checked]';
+
+            // 1) Direct switch lookup by accessible name/id/name.
+            let sw = [...document.querySelectorAll(switchers)]
+                .find(el => meta(el).includes('free model'));
+            if (!sw) {
+                // 2) Looser match on "free".
+                sw = [...document.querySelectorAll(switchers)]
+                    .find(el => meta(el).includes('free model') || meta(el).includes('free models'));
+            }
+            // 3) Fallback: find the "Free models enabled" label and walk up to its card.
+            if (!sw) {
+                const leaves = [...document.querySelectorAll('*')]
+                    .filter(el => el.children.length === 0 && /free models? enabled/i.test((el.textContent || '').trim()));
+                for (const leaf of leaves) {
+                    let anc = leaf;
+                    for (let i = 0; i < 6 && anc; i++, anc = anc.parentElement) {
+                        const cand = anc.querySelector(switchers);
+                        if (cand) { sw = cand; break; }
+                    }
+                    if (sw) break;
+                }
+            }
+            if (!sw) return { found: false };
+
+            const read = () => {
+                if (sw.tagName === 'INPUT' && sw.type === 'checkbox') return !!sw.checked;
+                const aria = sw.getAttribute('aria-checked');
+                if (aria !== null) return aria === 'true';
+                const ds = sw.getAttribute('data-state');
+                if (ds !== null) return ds === 'checked';
+                return null;
+            };
+
+            const wasOn = read();
+            if (wasOn !== true) {
+                try { sw.scrollIntoView({ block: 'center' }); } catch (e) {}
+                try { sw.click(); } catch (e) {}
+            }
+            return { found: true, wasOn: wasOn, nowOn: read(), clicked: wasOn !== true };
+        })()"""
+
+        for attempt in range(1, attempts + 1):
+            try:
+                res = await self.cdp.evaluate(toggle_js)
+            except Exception as exc:
+                self.log(f"[tokenharbor] Free models toggle probe failed: {exc}")
+                await self._sleep(1500)
+                continue
+
+            if isinstance(res, dict) and res.get("found"):
+                if res.get("nowOn") is True or res.get("wasOn") is True:
+                    self.log("[tokenharbor] Free models are enabled.")
+                    return True
+                # Switch state unreadable but we clicked it; assume it applied.
+                if res.get("nowOn") is None and res.get("clicked"):
+                    self.log("[tokenharbor] Free models toggle clicked (state not readable).")
+                    return True
+            else:
+                self.log(f"[tokenharbor] Free models toggle not visible yet (attempt {attempt}/{attempts})...")
+            await self._sleep(1500)
+
+        self.log("[tokenharbor] Could not confirm 'Free models enabled' toggle state.")
         return False
 
     async def create_account(self) -> HarvestedKey:
@@ -504,6 +589,10 @@ class TokenHarborCreator:
             raise RuntimeError("API key thk_live_ not found after creating key in dashboard")
 
         self.log(f"[tokenharbor] Successfully harvested API key: {api_key[:12]}...")
+
+        # Turn ON the "Free models enabled" toggle so free models work right away.
+        await self._enable_free_models()
+
         return HarvestedKey(
             platform="tokenharbor",
             email=email,

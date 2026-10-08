@@ -66,6 +66,16 @@ ELEVENLABS_MODELS: list[dict[str, Any]] = [
 ]
 
 
+# Grok xAI models (native OpenAI-compatible endpoint: https://api.x.ai/v1)
+GROK_MODELS: list[dict[str, Any]] = [
+    {"id": "grok-4", "name": "Grok 4", "provider": "xai", "type": "llm"},
+    {"id": "grok-4-fast", "name": "Grok 4 Fast", "provider": "xai", "type": "llm"},
+    {"id": "grok-3", "name": "Grok 3", "provider": "xai", "type": "llm"},
+    {"id": "grok-3-mini", "name": "Grok 3 Mini", "provider": "xai", "type": "llm"},
+    {"id": "grok-2-1212", "name": "Grok 2", "provider": "xai", "type": "llm"},
+]
+
+
 def get_default_models(platform: str) -> list[dict[str, Any]]:
     """Return default curated model catalog for the given platform."""
     p = platform.lower()
@@ -77,6 +87,8 @@ def get_default_models(platform: str) -> list[dict[str, Any]]:
         return list(ELEVENLABS_MODELS)
     if p in ("zerotwo", "zero-two", "zt"):
         return list(ZEROTWO_MODELS)
+    if p in ("grok", "grok-xai", "xai"):
+        return list(GROK_MODELS)
     return []
 
 

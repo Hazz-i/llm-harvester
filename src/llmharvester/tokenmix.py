@@ -29,6 +29,15 @@ def _rand_key_name(prefix: str = "prod-tm") -> str:
     return f"{prefix}-{suffix}"
 
 
+def _rand_password(length: int = 14) -> str:
+    """Generate a password satisfying TokenMix's rule (letters + at least one number)."""
+    alphabet = string.ascii_letters + string.digits
+    while True:
+        pwd = "".join(secrets.choice(alphabet) for _ in range(length))
+        if any(c.isdigit() for c in pwd) and any(c.isalpha() for c in pwd):
+            return pwd
+
+
 class TokenMixCreator:
     """Automates TokenMix registration, Turnstile clearing, and API key harvesting."""
 
@@ -132,11 +141,32 @@ class TokenMixCreator:
         )
 
     async def _create_single_account(self) -> HarvestedKey:
-        self.log("[tokenmix] Creating disposable mailbox...")
-        mailbox = await self.mail.create_mailbox(prefix="tm")
-        email = mailbox.address
-        password = mailbox.password
-        self.log(f"[tokenmix] Mailbox ready: {email}")
+        # TokenMix rejects disposable mail.tm domains ("This email provider is not
+        # supported. Please use a mainstream or work email"), so prefer a Gmail
+        # +alias mailbox polled via IMAP. Fall back to mail.tm only if Gmail
+        # credentials are unavailable.
+        from .grok_farm import GmailImapService
+
+        imap_svc: GmailImapService | None = None
+        mailbox: Mailbox | None = None
+        cfg = self.config
+        if cfg.imap_enabled and cfg.imap_user and cfg.imap_password and cfg.email_domain:
+            # Catch-all / work domain: TokenMix accepts custom domains, and every
+            # generated address is unique, so one domain yields many accounts.
+            domain = cfg.email_domain.lstrip("@")
+            email = f"tm_{secrets.token_hex(4)}@{domain}"
+            imap_svc = GmailImapService(
+                cfg.imap_user, cfg.imap_password, host=cfg.imap_host, port=cfg.imap_port
+            )
+            imap_svc.email = email
+            self.log(f"[tokenmix] Using IMAP catch-all mailbox: {email}")
+        else:
+            self.log("[tokenmix] Creating disposable mailbox...")
+            mailbox = await self.mail.create_mailbox(prefix="tm")
+            email = mailbox.address
+            self.log(f"[tokenmix] Mailbox ready: {email}")
+        # TokenMix requires a password containing letters AND at least one number.
+        password = _rand_password()
 
         await self._reset_session()
 
@@ -184,6 +214,27 @@ class TokenMixCreator:
         # 4. Wait for Turnstile before requesting verification code
         await self._wait_for_turnstile(timeout_seconds=30.0)
 
+        # Install a fetch hook so a rejected "Send Code" surfaces immediately
+        # (e.g. 409 duplicate email, 429 rate limit) instead of waiting for mail.
+        await self.cdp.evaluate(
+            """(()=>{
+                if (window.__tmNetlog) return true;
+                window.__tmNetlog = [];
+                const of = window.fetch;
+                window.fetch = async (...a) => {
+                    const [u,o]=a; const e={url:String(u),status:0,body:null};
+                    try {
+                        const r = await of(...a);
+                        e.status = r.status;
+                        try { e.body = (await r.clone().text()).slice(0,300); } catch(x){}
+                        window.__tmNetlog.push(e);
+                        return r;
+                    } catch(x) { e.status=-1; e.body=String(x); window.__tmNetlog.push(e); throw x; }
+                };
+                return true;
+            })()"""
+        )
+
         # 5. Click "Send code" button
         self.log("[tokenmix] Requesting verification OTP code...")
         await self.cdp.evaluate(
@@ -200,35 +251,54 @@ class TokenMixCreator:
         )
         await self._sleep(2500)
 
-        # 6. Wait for verification email from mail.tm
-        self.log("[tokenmix] Waiting for verification email from mail.tm...")
-        msg = await self.mail.wait_for_message(
-            mailbox,
-            timeout=self.config.wait_seconds,
-            interval=3.0,
-            match="tokenmix",
+        # Fail fast if TokenMix refused the OTP request.
+        send_resp = await self.cdp.evaluate(
+            """(()=>{
+                const e = (window.__tmNetlog||[]).find(x => /verify-email/.test(x.url));
+                return e ? {status:e.status, body:e.body} : null;
+            })()"""
         )
-        if not msg:
-            msg = await self.mail.wait_for_message(
-                mailbox,
-                timeout=15.0,
-                interval=3.0,
+        if isinstance(send_resp, dict) and send_resp.get("status", 0) >= 400:
+            raise RuntimeError(
+                f"TokenMix rejected 'Send Code' (HTTP {send_resp['status']}): {send_resp.get('body')}"
             )
 
-        if not msg:
-            raise RuntimeError("Timed out waiting for TokenMix verification email")
-
-        content = (msg.text or "") + "\n" + (msg.html or "")
-        code_match = OTP_CODE_RE.search(content)
-        if not code_match:
-            # Try finding any 6-digit code in email
-            all_digits = re.findall(r"\b\d{6}\b", content)
-            otp_code = all_digits[0] if all_digits else None
+        # 6. Wait for the verification OTP
+        otp_code: str | None = None
+        if imap_svc is not None:
+            self.log("[tokenmix] Polling IMAP for verification OTP...")
+            otp_code = await asyncio.to_thread(
+                imap_svc.poll_numeric_code, int(self.config.wait_seconds)
+            )
         else:
-            otp_code = code_match.group(1)
+            assert mailbox is not None
+            self.log("[tokenmix] Waiting for verification email from mail.tm...")
+            msg = await self.mail.wait_for_message(
+                mailbox,
+                timeout=self.config.wait_seconds,
+                interval=3.0,
+                match="tokenmix",
+            )
+            if not msg:
+                msg = await self.mail.wait_for_message(
+                    mailbox,
+                    timeout=15.0,
+                    interval=3.0,
+                )
+
+            if not msg:
+                raise RuntimeError("Timed out waiting for TokenMix verification email")
+
+            content = (msg.text or "") + "\n" + (msg.html or "")
+            code_match = OTP_CODE_RE.search(content)
+            if code_match:
+                otp_code = code_match.group(1)
+            else:
+                all_digits = re.findall(r"\b\d{6}\b", content)
+                otp_code = all_digits[0] if all_digits else None
 
         if not otp_code:
-            raise RuntimeError("Failed to parse 6-digit verification code from email")
+            raise RuntimeError("Failed to parse 6-digit verification code from TokenMix email")
 
         self.log(f"[tokenmix] Received verification OTP code: {otp_code}")
 
@@ -330,7 +400,8 @@ class TokenMixCreator:
         key_name = _rand_key_name(self.config.key_name_prefix)
         await self.cdp.evaluate(
             """(()=>{
-                const input = document.querySelector('.tm-panel input[type="text"]') ||
+                const input = document.querySelector('input[placeholder*="Production Server" i]') ||
+                              document.querySelector('.tm-panel input[type="text"]') ||
                               document.querySelector('input[placeholder*="key" i]') ||
                               document.querySelector('input[name="name"]') ||
                               document.querySelector('input[type="text"]');
@@ -347,12 +418,22 @@ class TokenMixCreator:
         )
         await self._sleep(1000)
 
-        # 14. Click Confirm / Create Key in modal
+        # 14. Click Confirm / Create Key in modal (anchor to the panel holding the name input,
+        #     so we don't accidentally click the page-level "Create Key" button).
         await self.cdp.evaluate(
             """(()=>{
-                const modal = document.querySelector('.tm-panel') || document.body;
+                const nameInput = document.querySelector('input[placeholder*="Production Server" i]') ||
+                                  document.querySelector('.tm-panel input[type="text"]');
+                let modal = nameInput;
+                for (let i = 0; i < 8 && modal; i++, modal = modal.parentElement) {
+                    if (modal.querySelectorAll && [...modal.querySelectorAll('button')]
+                            .some(b => /(create key|generate key|confirm|save)/i.test((b.innerText || '').trim()))) {
+                        break;
+                    }
+                }
+                if (!modal) modal = document.querySelector('.tm-panel') || document.body;
                 const btn = [...modal.querySelectorAll('button')]
-                    .find(b => /(create key|generate key|submit|save|confirm)/i.test((b.innerText || '').trim()));
+                    .find(b => /(create key|generate key|submit|save|confirm)/i.test((b.innerText || '').trim()) && !b.disabled);
                 if (btn) { btn.click(); return true; }
                 return false;
             })()"""

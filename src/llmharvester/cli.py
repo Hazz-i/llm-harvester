@@ -216,7 +216,7 @@ if typer is not None:
 
     @app.command()
     def sync(
-        target: str = typer.Option("all", "--target", "-t", help="Target platform: zerotwo | tokenharbor | tokenmix | elevenlabs | all"),
+        target: str = typer.Option("all", "--target", "-t", help="Target platform: zerotwo | tokenharbor | tokenmix | elevenlabs | grok | all"),
         router_url: str | None = typer.Option(None, "--router-url", help="9Router base URL"),
         config: Path | None = typer.Option(None, "--config", "-c", help="TOML config file"),
     ) -> None:
@@ -258,7 +258,7 @@ if typer is not None:
                 await client.login_with_password()
 
             targets_to_sync = (
-                ["zerotwo", "tokenharbor", "tokenmix", "elevenlabs"]
+                ["zerotwo", "tokenharbor", "tokenmix", "elevenlabs", "grok"]
                 if target.lower() in ("all", "*")
                 else [target.lower()]
             )
@@ -360,27 +360,53 @@ if typer is not None:
                     if not keys:
                         _log(f"[router] No valid ElevenLabs keys found in {cfg.output_dir}/elevenlabs_keys.jsonl or .txt")
                         continue
-                    node_id = await client.ensure_node(
-                        name=cfg.elevenlabs.node_name,
-                        base_url=cfg.elevenlabs.api_base,
-                        prefix=cfg.elevenlabs.node_prefix,
-                        api_type="chat",
-                    )
-                    if node_id:
-                        await client.sync_custom_models(node_id, get_default_models("elevenlabs"))
-                    count = await client.sync_connections(
-                        keys,
-                        node_id=node_id,
-                        node_prefix=cfg.elevenlabs.node_prefix,
-                        extra={
-                            "base_url": cfg.elevenlabs.api_base,
-                            "node_name": cfg.elevenlabs.node_name,
-                            "display_name": "ElevenLabs",
-                            "account_type": "elevenlabs",
-                            "api_type": "chat",
-                        },
-                    )
-                    _log(f"[router] ElevenLabs: synced {count} key(s) (node={node_id})")
+                    # ElevenLabs in 9Router is a Text-to-Speech (TTS) media provider
+                    # (endpoint https://api.elevenlabs.io/v1/text-to-speech, authHeader
+                    # xi-api-key), NOT an OpenAI-compatible chat node. Insert each key
+                    # directly under provider "elevenlabs".
+                    count = 0
+                    for k in keys:
+                        res = await client.add_connection(
+                            provider="elevenlabs",
+                            api_key=k["api_key"],
+                            name=f"ElevenLabs · {k.get('email') or 'account'}",
+                            provider_specific={"email": k.get("email"), "accountType": "elevenlabs"},
+                        )
+                        if res.ok:
+                            count += 1
+                        else:
+                            _log(f"[router] ElevenLabs connect failed for {k.get('email')}: {res.message}")
+                    _log(f"[router] ElevenLabs: synced {count} key(s) (provider=elevenlabs / TTS)")
+                    total_synced += count
+
+                elif t in ("grok", "grok-xai", "xai"):
+                    records = _read_records(Path(cfg.output_dir) / "grok_accounts.jsonl")
+                    grok_keys = []
+                    for rec in records:
+                        email = rec.get("email")
+                        token = rec.get("sso_token") or rec.get("access_token") or rec.get("api_key")
+                        if email and token:
+                            grok_keys.append({"email": email, "token": token})
+                    if not grok_keys:
+                        _log(f"[router] No Grok accounts with a usable token found in {cfg.output_dir}/grok_accounts.jsonl")
+                        continue
+                    count = 0
+                    for k in grok_keys:
+                        res = await client.add_connection(
+                            provider=cfg.grok.provider,
+                            api_key=k["token"],
+                            name=f"{cfg.grok.node_name} · {k['email']}",
+                            provider_specific={
+                                "email": k["email"],
+                                "accountType": "grok",
+                                "prefix": cfg.grok.node_prefix,
+                            },
+                        )
+                        if res.ok:
+                            count += 1
+                        else:
+                            _log(f"[router] Grok connect failed for {k['email']}: {res.message}")
+                    _log(f"[router] Grok xAI: synced {count} account(s) (provider={cfg.grok.provider})")
                     total_synced += count
 
             _log(f"[router] Total synced {total_synced} connection(s) to 9Router at {cfg.router.base_url}")

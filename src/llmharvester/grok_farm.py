@@ -52,7 +52,7 @@ grok_farm_state: Dict[str, Any] = {
     "current_step": "idle",     # "opening_browser", "entering_email", "waiting_otp", "verifying_otp", "setting_profile", "finalizing", "completed"
     "last_error": None
 }
-grok_lock = threading.Lock()
+grok_lock = threading.RLock()
 
 
 def grok_log(message: str, level: str = "info", step: Optional[str] = None):
@@ -145,7 +145,13 @@ def select_working_residential_proxy(candidates: List[str], max_tries: int = 15)
 
 
 def load_gmail_credentials() -> Tuple[Optional[str], Optional[str]]:
-    """Mencari kredensial Gmail IMAP dari config.toml qoder-creator atau settings.json."""
+    """Cari kredensial mailbox dari environment (IMAP_* lalu GMAIL_*), config.toml, atau settings.json."""
+    for u_key, p_key in (("IMAP_USER", "IMAP_PASSWORD"), ("GMAIL_USER", "GMAIL_APP_PASSWORD")):
+        env_user = os.getenv(u_key)
+        env_pwd = os.getenv(p_key)
+        if env_user and env_pwd:
+            return env_user.strip(), env_pwd.replace(" ", "").strip()
+
     candidates = [
         os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "qoder-creator", "config.toml")),
         os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "config", "settings.json")),
@@ -180,37 +186,91 @@ class GmailImapService:
     2. Google mendukung sub-addressing tak terhingga: user+alias@gmail.com.
     3. Email verifikasi masuk instan ke Gmail utama dan dibaca via SSL IMAP port 993.
     """
-    def __init__(self, user: str = None, app_password: str = None):
+    def __init__(self, user: str = None, app_password: str = None, host: str = "imap.gmail.com", port: int = 993):
         cfg_user, cfg_pwd = load_gmail_credentials()
         self.user = (user or cfg_user).strip()
         self.app_password = (app_password or cfg_pwd).replace(" ", "").strip()
+        self.host = host
+        self.port = port
         self.email: Optional[str] = None
         self.password: Optional[str] = None
         self._tag: Optional[str] = None
 
     def create_mailbox(self) -> Tuple[str, str]:
         clean_user = self.user.split("@")[0]
+        # Catch-all / work domain: unique address on a custom domain so one mailbox
+        # (read via IMAP) can back many accounts. Falls back to Gmail +alias.
+        domain = (os.getenv("EMAIL_DOMAIN") or "").lstrip("@")
+        if domain:
+            self._tag = None
+            self.email = f"gk_{''.join(random.choices(string.ascii_lowercase + string.digits, k=10))}@{domain}"
+            self.password = "GrokFarm" + "".join(random.choices(string.ascii_letters + string.digits, k=8)) + "!@"
+            return self.email, self.password
         # Buat tag alias unik (contoh: luthfishidqi2+gk123456@gmail.com)
         self._tag = f"gk{int(time.time()) % 100000}{''.join(random.choices(string.ascii_lowercase + string.digits, k=4))}"
         self.email = f"{clean_user}+{self._tag}@gmail.com"
         self.password = "GrokFarm" + "".join(random.choices(string.ascii_letters + string.digits, k=8)) + "!@"
         return self.email, self.password
 
-    def poll_verification_code(self, timeout_sec: int = 90) -> Optional[str]:
+    @staticmethod
+    def _html_to_text(raw: str) -> str:
+        """Strip <style>/<script>/tags so CSS hex colors don't masquerade as OTP digits."""
+        raw = re.sub(r"(?is)<(script|style)[^>]*>.*?</\1>", " ", raw)
+        raw = re.sub(r"(?s)<[^>]+>", " ", raw)
+        return raw
+
+    @staticmethod
+    def _extract_body(msg_obj) -> str:
+        body = ""
+        if msg_obj.is_multipart():
+            for part in msg_obj.walk():
+                if part.get_content_type() in ("text/plain", "text/html"):
+                    payload = part.get_payload(decode=True)
+                    if payload:
+                        body += GmailImapService._html_to_text(
+                            payload.decode("utf-8", errors="replace")
+                        ) + " "
+        else:
+            payload = msg_obj.get_payload(decode=True)
+            if payload:
+                body = GmailImapService._html_to_text(payload.decode("utf-8", errors="replace"))
+        return body
+
+    def _poll(self, timeout_sec: int, matcher) -> Optional[str]:
+        """Poll the Gmail INBOX for this alias and return the first code `matcher` yields.
+
+        `matcher(from_hdr, subject, body) -> Optional[str]` decides whether a given
+        message is relevant and extracts the verification code from it.
+        """
         target_addr = (self.email or "").strip().lower()
         if not target_addr or not self.user or not self.app_password:
             return None
+
+        # Gmail often routes forwarded/catch-all mail to "All Mail" (and sometimes
+        # Spam) instead of INBOX, so search those folders too.
+        folders = ["INBOX"]
+        if "gmail" in (self.host or "").lower():
+            folders += ['"[Gmail]/All Mail"', '"[Gmail]/Spam"']
 
         start_time = time.time()
         while time.time() - start_time < timeout_sec:
             mail = None
             try:
-                mail = imaplib.IMAP4_SSL("imap.gmail.com", 993)
+                mail = imaplib.IMAP4_SSL(self.host, self.port)
                 mail.login(self.user, self.app_password)
-                mail.select("INBOX", readonly=True)
 
-                status, data = mail.search(None, "ALL")
-                if status == "OK" and data and data[0]:
+                for folder in folders:
+                    try:
+                        typ, _ = mail.select(folder, readonly=True)
+                    except Exception:
+                        continue
+                    if typ != "OK":
+                        continue
+
+                    status, data = mail.search(None, "ALL")
+                    if status != "OK" or not data or not data[0]:
+                        continue
+
                     msg_ids = data[0].split()
                     recent_ids = msg_ids[-25:][::-1]
                     for mid in recent_ids:
@@ -221,32 +281,21 @@ class GmailImapService:
 
                         to_hdr = str(msg_obj.get("To", "")).lower()
                         delivered_hdr = str(msg_obj.get("Delivered-To", "")).lower()
-                        subject = str(msg_obj.get("Subject", ""))
-                        from_hdr = str(msg_obj.get("From", "")).lower()
 
                         # Pastikan email untuk alias target spesifik akun ini
-                        is_target = target_addr in to_hdr or target_addr in delivered_hdr or (self._tag and (self._tag in to_hdr or self._tag in delivered_hdr))
-                        if is_target and ("xai" in from_hdr or "grok" in from_hdr or "x.ai" in from_hdr or "code" in subject.lower() or "verif" in subject.lower()):
-                            body = ""
-                            if msg_obj.is_multipart():
-                                for part in msg_obj.walk():
-                                    if part.get_content_type() in ("text/plain", "text/html"):
-                                        payload = part.get_payload(decode=True)
-                                        if payload:
-                                            body += payload.decode("utf-8", errors="replace") + " "
-                            else:
-                                payload = msg_obj.get_payload(decode=True)
-                                if payload:
-                                    body = payload.decode("utf-8", errors="replace")
+                        is_target = (
+                            target_addr in to_hdr
+                            or target_addr in delivered_hdr
+                            or (self._tag and (self._tag in to_hdr or self._tag in delivered_hdr))
+                        )
+                        if not is_target:
+                            continue
 
-                            full_text = f"{subject} {body}"
-                            # Cari pola kode verifikasi xAI (XXX-XXX atau 6 digit angka)
-                            m = re.search(r"\b([A-Za-z0-9]{3}-[A-Za-z0-9]{3})\b", full_text)
-                            if m:
-                                return m.group(1).replace("-", "").strip()
-                            m = re.search(r"\b(\d{6})\b", full_text)
-                            if m:
-                                return m.group(1).strip()
+                        subject = str(msg_obj.get("Subject", ""))
+                        from_hdr = str(msg_obj.get("From", "")).lower()
+                        code = matcher(from_hdr, subject, self._extract_body(msg_obj))
+                        if code:
+                            return code
             except Exception:
                 pass
             finally:
@@ -258,6 +307,47 @@ class GmailImapService:
             time.sleep(3)
 
         return None
+
+    def poll_verification_code(self, timeout_sec: int = 90) -> Optional[str]:
+        """Poll for an xAI/Grok OTP (XXX-XXX or 6 digits)."""
+        def matcher(from_hdr: str, subject: str, body: str) -> Optional[str]:
+            if not (
+                "xai" in from_hdr
+                or "grok" in from_hdr
+                or "x.ai" in from_hdr
+                or "code" in subject.lower()
+                or "verif" in subject.lower()
+            ):
+                return None
+            full_text = f"{subject} {body}"
+            # Cari pola kode verifikasi xAI (XXX-XXX atau 6 digit angka)
+            m = re.search(r"\b([A-Za-z0-9]{3}-[A-Za-z0-9]{3})\b", full_text)
+            if m:
+                return m.group(1).replace("-", "").strip()
+            m = re.search(r"\b(\d{6})\b", full_text)
+            if m:
+                return m.group(1).strip()
+            return None
+
+        return self._poll(timeout_sec, matcher)
+
+    def poll_numeric_code(
+        self,
+        timeout_sec: int = 90,
+        senders: Tuple[str, ...] = ("tokenmix",),
+        subjects: Tuple[str, ...] = ("code", "verif", "tokenmix"),
+    ) -> Optional[str]:
+        """Poll for a plain 6-digit OTP from the given senders/subject keywords (TokenMix & friends)."""
+        def matcher(from_hdr: str, subject: str, body: str) -> Optional[str]:
+            if not (
+                any(s in from_hdr for s in senders)
+                or any(s in subject.lower() for s in subjects)
+            ):
+                return None
+            m = re.search(r"\b(\d{6})\b", f"{subject} {body}")
+            return m.group(1).strip() if m else None
+
+        return self._poll(timeout_sec, matcher)
 
 
 class MailTmService:
@@ -733,14 +823,99 @@ def register_single_grok_account(index: int, total: int, headless: bool = True, 
         fill_profile_and_submit(page, password, timeout=10)
         time.sleep(3)
 
-        # 6. Extract SSO Cookie
+        # 6. Extract SSO Cookie / session token
         grok_log("Extracting authentication tokens & session cookies...", level="info", step="finalizing")
-        cookies = page.cookies()
-        sso_token = None
-        for c in cookies:
-            if c.get("name") in ("sso", "sso-rw", "__Secure-next-auth.session-token"):
-                sso_token = c.get("value")
+        # Ensure the web session is fully established (grok.com issues the `sso` cookie).
+        try:
+            page.get("https://grok.com/")
+            time.sleep(3)
+        except Exception:
+            pass
+
+        cookies = []
+        for kwargs in ({"all_domains": True, "all_info": True}, {"all_domains": True}, {}):
+            try:
+                got = page.cookies(**kwargs)
+            except TypeError:
+                continue
+            except Exception:
+                continue
+            if got:
+                cookies = got
                 break
+
+        try:
+            names = sorted({(c.get("name") or "") for c in cookies})
+            grok_log(f"Captured {len(cookies)} cookie(s): {', '.join(names)}", level="debug")
+        except Exception:
+            pass
+
+        # Prefer the grok.com `sso` cookie (that's what 9Router's grok-web expects).
+        def _pick(name_eq: str | None = None, contains: str | None = None, domain_has: str | None = None):
+            for c in cookies:
+                n = (c.get("name") or "")
+                d = (c.get("domain") or "")
+                v = c.get("value")
+                if not v:
+                    continue
+                if name_eq and n.lower() != name_eq:
+                    continue
+                if contains and contains not in n.lower():
+                    continue
+                if domain_has and domain_has not in d.lower():
+                    continue
+                return v
+            return None
+
+        for c in cookies:
+            n = (c.get("name") or "").lower()
+            if "sso" in n or "session" in n or "auth" in n:
+                grok_log(
+                    f"session cookie: name={c.get('name')} domain={c.get('domain')} len={len(c.get('value') or '')}",
+                    level="debug",
+                )
+
+        sso_token = (
+            _pick(name_eq="sso", domain_has="grok")
+            or _pick(name_eq="sso")
+            or _pick(name_eq="sso-rw", domain_has="grok")
+            or _pick(name_eq="sso-rw")
+            or _pick(contains="sso")
+            or _pick(name_eq="__secure-next-auth.session-token")
+        )
+        if sso_token:
+            grok_log(f"SSO/session token captured (len={len(sso_token)}).", level="success", step="finalizing")
+        else:
+            grok_log("No SSO/session cookie found in browser session.", level="warning")
+
+        # xAI may keep auth in local/session storage rather than cookies.
+        ls_keys = []
+        ss_keys = []
+        try:
+            ls_keys = page.run_js("return Object.keys(window.localStorage);") or []
+        except Exception:
+            ls_keys = []
+        try:
+            ss_keys = page.run_js("return Object.keys(window.sessionStorage);") or []
+        except Exception:
+            ss_keys = []
+        grok_log(f"Storage keys -> localStorage: {ls_keys} | sessionStorage: {ss_keys}", level="debug")
+        if not sso_token:
+            for store, keys in (("localStorage", ls_keys), ("sessionStorage", ss_keys)):
+                for k in keys:
+                    lk = str(k).lower()
+                    if not any(t in lk for t in ("token", "auth", "sso", "session", "jwt", "access")):
+                        continue
+                    try:
+                        val = page.run_js(f"return window.{store}.getItem({json.dumps(str(k))});")
+                    except Exception:
+                        val = None
+                    if isinstance(val, str) and len(val) > 20:
+                        sso_token = val
+                        grok_log(f"Auth token found in {store}['{k}'] (len={len(val)}).", level="success", step="finalizing")
+                        break
+                if sso_token:
+                    break
 
         account_data = {
             "email": email,

@@ -136,3 +136,34 @@ def test_elevenlabs_config_from_env(monkeypatch):
     assert cfg.elevenlabs.imap_user == "user@test.com"
     assert cfg.elevenlabs.imap_password == "secret"
     assert cfg.elevenlabs.imap_enabled is True
+
+
+@pytest.mark.asyncio
+async def test_configure_api_key_modal():
+    cdp = MockCDP()
+    mail = AsyncMock()
+    creator = ElevenLabsCreator(cdp, mail)
+    creator._sleep = AsyncMock()
+
+    await creator._configure_api_key_modal()
+
+    eval_scripts = " ".join(cdp.evaluations)
+    assert "restrict key" in eval_scripts.lower()
+    assert "Write" in eval_scripts
+    assert "Access" in eval_scripts
+    assert "prod-harvest" in eval_scripts
+
+
+@pytest.mark.asyncio
+async def test_capture_screenshot(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    cdp = MockCDP()
+    cdp.screenshot = AsyncMock(return_value=b"\x89PNG\r\n\x1a\nfakeimagebytes")
+    mail = AsyncMock()
+    creator = ElevenLabsCreator(cdp, mail)
+
+    path = await creator._capture_screenshot("test_err.png")
+    assert path is not None
+    assert path.exists()
+    assert path.read_bytes() == b"\x89PNG\r\n\x1a\nfakeimagebytes"
+
